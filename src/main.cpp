@@ -33,8 +33,7 @@ static std::map<String, CmdHandler> commandMap;
 #define STEPPER_B_STEP   12  // STEP pin
 #define STEPPER_B_SLEEP  11  // SLEEP pin
 
-#define PERISTALTIC_A_A  15  // A pin
-#define PERISTALTIC_A_B   7  // B pin
+#define PERISTALTIC_A  10  // A pin
 
 #define PUMP_ENABLE 42
 
@@ -161,14 +160,14 @@ void onCommandDispense(float milliseconds) {
     }
 
     Serial.printf(
-        "Pumping A over %.2f s (interval %lums)\n",
+        "Pumping A over %.2f s\n",
         milliseconds
     );
 
     Serial.println("Dispensing...");
-    digitalWrite(PERISTALTIC_A_A, HIGH);
+    digitalWrite(PERISTALTIC_A, HIGH);
     delay(milliseconds);
-    digitalWrite(PERISTALTIC_A_A, LOW);
+    digitalWrite(PERISTALTIC_A, LOW);
     Serial.println("Dispense complete.");
 }
 
@@ -177,6 +176,11 @@ void initCommands() {
     commandMap["off"]  = [](const String&){ onCommandOff(); };
     commandMap["tgl"]  = [](const String&){ onCommandTgl(); };
     commandMap["stp"]  = [](const String&){ onCommandStp(); };
+
+    commandMap["disp"] = [](const String& args){
+      int millis = args.toFloat();
+      onCommandDispense(millis);
+    };
 
     commandMap["step"] = [](const String& args){
       int steps = args.toInt();
@@ -302,10 +306,8 @@ void initPins() {
     digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
 
     // Peristaltic A
-    pinMode(PERISTALTIC_A_A, OUTPUT);
-    pinMode(PERISTALTIC_A_B, OUTPUT);
-    digitalWrite(PERISTALTIC_A_A, LOW);  // Set the peristaltic to LOW initially
-    digitalWrite(PERISTALTIC_A_B, LOW);  // Set the peristaltic to LOW initially
+    pinMode(PERISTALTIC_A, OUTPUT);
+    digitalWrite(PERISTALTIC_A, LOW);  // Set the peristaltic to LOW initially
 }
 
 void setup() {
