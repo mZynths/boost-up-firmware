@@ -1,7 +1,14 @@
 #include <Pump.h>
 
-Pump::Pump(String fluid_name, int drive_pin, float calibration_K)
-    : m_fluid_name(fluid_name), m_drive_pin(drive_pin), m_calibration_K(calibration_K), m_isEnabled(false)
+Pump::Pump(
+    String fluid_name, 
+    int drive_pin, 
+    float calibration_K
+)
+    : m_fluid_name(fluid_name), 
+    m_drive_pin(drive_pin), 
+    m_calibration_K(calibration_K), 
+    m_isEnabled(false)
 {
     pinMode(m_drive_pin, OUTPUT);
     digitalWrite(m_drive_pin, LOW);  // Make sure pump is off initially
@@ -9,13 +16,11 @@ Pump::Pump(String fluid_name, int drive_pin, float calibration_K)
 
 Pump::Pump(String fluid_name, int drive_pin)
     : Pump(fluid_name, drive_pin, 1.0f) // Default calibration of 1 mL/s if none provided
-{
-}
+{}
 
 Pump::Pump(int drive_pin)
     : Pump("Some fluid", drive_pin, 1.0f) // Default calibration of 1 mL/s if none provided
-{
-}
+{}
 
 void Pump::enable() {
     m_isEnabled = true;
