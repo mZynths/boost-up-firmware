@@ -1,10 +1,9 @@
 #include <Arduino.h>
-#include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <WiFi.h>
 #include <map>
 #include <functional>
 #include <secrets.h>
+#include <Pump.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -27,15 +26,21 @@ using CmdHandler = std::function<void(const String& args)>;
 static std::map<String, CmdHandler> commandMap;
 
 // ——— Pin definitions ———
+#define PERISTALTIC_A  46
+#define PERISTALTIC_B   9 
+#define PERISTALTIC_C  10
+#define WATER_PUMP 2
+
+// ——— Some other pins (migrating to objects) ———
 #define STEPPER_A_STEP   14  // STEP pin
 #define STEPPER_A_SLEEP  13  // SLEEP pin
 
 #define STEPPER_B_STEP   12  // STEP pin
 #define STEPPER_B_SLEEP  11  // SLEEP pin
 
-#define PERISTALTIC_A  10  // A pin
 
-#define PUMP_ENABLE 42
+#define TUMERIC_A 35
+#define TUMERIC_B 36
 
 // ——— Global variables & constants ———
 const char *ssid = WIFI_SSID;
@@ -50,74 +55,78 @@ AsyncWebServer server(80);
 // Create a WebSocket object
 AsyncWebSocket ws("/ws");
 
-void onCommandOn() {
-    Serial.println("Pump ON");
-    digitalWrite(PUMP_ENABLE, HIGH);
-}
+// Pump objects
+static std::map<String, Pump*> fluidToPumpMap;
+Pump chocolate("Jarabe de Chocolate", PERISTALTIC_A, 1.0f);
+Pump caramelo("Jarabe de Caramelo", PERISTALTIC_B, 1.0f);
+Pump vainilla("Jarabe de Vainilla", PERISTALTIC_C, 1.0f);
+Pump agua("Agua", WATER_PUMP, 1.0f);
 
-void onCommandOff() {
-    Serial.println("Pump OFF");
-    digitalWrite(PUMP_ENABLE, LOW);
-}
-
-void onCommandTgl() {
-    Serial.println("Pump TOGGLE");
-    pumpState = !pumpState;
-    digitalWrite(PUMP_ENABLE, pumpState ? HIGH : LOW);
-}
-
-// Fixed 200-step move
-void onCommandStp() {
-    const int steps = 200;
-    const unsigned long pulseDelay = 1000;  // µs, adjust to taste
-  
-    Serial.println("Turning stepper 200 steps");
-  
-    // wake driver
-    digitalWrite(STEPPER_A_SLEEP, HIGH);
-    delayMicroseconds(50);
-  
-    for (int i = 0; i < steps; i++) {
-        digitalWrite(STEPPER_A_STEP, HIGH);
-        delayMicroseconds(pulseDelay);
-        digitalWrite(STEPPER_A_STEP, LOW);
-        delayMicroseconds(pulseDelay);
-    }
-  
-    // sleep driver
-    digitalWrite(STEPPER_A_SLEEP, LOW);
-    Serial.println("Finished");
-  }
-
-void onCommandStep(int steps) {
-    if (steps == 0) {
-        Serial.println("Usage: step(n) where n != 0");
+void onCommandDispenseFluid(Pump* pump, float milliliters) {
+    if (milliliters <= 0.0f) {
+        Serial.println("Error: duration must be > 0");
         return;
     }
-  
-    // total time for entire move—choose a default or pass as second arg if you like
-    const float totalSeconds = 0.5;  // e.g. half a second for the whole move
-    unsigned long interval = (unsigned long)((totalSeconds * 1e6) / (abs(steps) * 2));
-  
-    Serial.println("Turning stepper " + String(steps) + " steps");
-  
-    digitalWrite(STEPPER_A_SLEEP, HIGH);
-    delayMicroseconds(50);
-  
-    for (int i = 0; i < abs(steps); i++) {
-        digitalWrite(STEPPER_A_STEP, HIGH);
-        delayMicroseconds(interval);
-        digitalWrite(STEPPER_A_STEP, LOW);
-        delayMicroseconds(interval);
+
+    Serial.printf(
+        "Pumping %.2f mL of %s\n",
+        milliliters,
+        pump->getFluidName().c_str()
+    );
+
+    pump->enable();
+    pump->dispense(milliliters);
+    
+    while (pump->isDispensing()) {
+        pump->update();
     }
-  
-    digitalWrite(STEPPER_A_SLEEP, LOW);
-    Serial.println("Finished");
+    
+    pump->disable();
 }
 
-// ——— onCommandSpin ———
-// degrees: how far to turn (e.g. 90.0 for a quarter turn)
-// seconds: how long the move should take
+void onCommandRunPump(Pump* pump, float milliseconds) {
+    if (milliseconds <= 0.0f) {
+        Serial.println("Error: duration must be > 0");
+        return;
+    }
+
+    Serial.printf(
+        "Dispensing %s over %.2f ms\n",
+        pump->getFluidName().c_str(),
+        milliseconds
+    );
+
+    pump->enable();
+    pump->spin(milliseconds);
+
+    while (pump->isDispensing()) {
+        pump->update();
+    }
+
+    pump->disable();
+}
+
+void onCommandPumpSetCalibration(Pump* pump, float milliliters, float milliseconds) {
+    if (milliliters <= 0.0f) {
+        Serial.println("Error: duration must be > 0");
+        return;
+    }
+    
+    if (milliseconds <= 0.0f) {
+        Serial.println("Error: duration must be > 0");
+        return;
+    }
+
+    pump->set_calibration(milliseconds, milliliters);
+
+    Serial.printf(
+        "Set calibration for %s: %.2f mL over %.2f ms\n",
+        pump->getFluidName().c_str(),
+        milliliters,
+        milliseconds
+    );
+}
+
 void onCommandSpin(float degrees, float seconds) {
     if (seconds <= 0.0f) {
         Serial.println("Error: duration must be > 0");
@@ -151,42 +160,78 @@ void onCommandSpin(float degrees, float seconds) {
   
     digitalWrite(STEPPER_A_SLEEP, LOW);
     Serial.println("Spin complete.");
-  }
-
-void onCommandDispense(float milliseconds) {
-    if (milliseconds <= 0.0f) {
-        Serial.println("Error: duration must be > 0");
-        return;
-    }
-
-    Serial.printf(
-        "Pumping A over %.2f s\n",
-        milliseconds
-    );
-
-    Serial.println("Dispensing...");
-    digitalWrite(PERISTALTIC_A, HIGH);
-    delay(milliseconds);
-    digitalWrite(PERISTALTIC_A, LOW);
-    Serial.println("Dispense complete.");
 }
 
 void initCommands() {
-    commandMap["on"]   = [](const String&){ onCommandOn(); };
-    commandMap["off"]  = [](const String&){ onCommandOff(); };
-    commandMap["tgl"]  = [](const String&){ onCommandTgl(); };
-    commandMap["stp"]  = [](const String&){ onCommandStp(); };
+    fluidToPumpMap["chocolate"] = &chocolate;
+    fluidToPumpMap["caramelo"]  = &caramelo;
+    fluidToPumpMap["vainilla"]  = &vainilla;
+    fluidToPumpMap["agua"]      = &agua;
 
-    commandMap["disp"] = [](const String& args){
-      int millis = args.toFloat();
-      onCommandDispense(millis);
+    commandMap["fluidPump"]   = [](const String& args){
+        auto parts = splitArgs(args);
+
+        if (parts.size() < 2) {
+            Serial.println("Usage: fluidPump(fluidAlias,milliliters)");
+            return;
+        }
+
+        String fluid = parts[0];
+        float milliliters = parts[1].toFloat();
+
+        auto it = fluidToPumpMap.find(fluid);
+        
+        if (it == fluidToPumpMap.end()) {
+            Serial.println("Error: unknown fluid " + fluid);
+            return;
+        }
+
+        onCommandDispenseFluid(it->second, milliliters);
     };
 
-    commandMap["step"] = [](const String& args){
-      int steps = args.toInt();
-      onCommandStep(steps);
+    commandMap["fluidSpin"]   = [](const String& args){
+        auto parts = splitArgs(args);
+
+        if (parts.size() < 2) {
+            Serial.println("Usage: fluidSpin(fluidAlias,milliseconds)");
+            return;
+        }
+
+        String fluid = parts[0];
+        float milliseconds = parts[1].toFloat();
+
+        auto it = fluidToPumpMap.find(fluid);
+        
+        if (it == fluidToPumpMap.end()) {
+            Serial.println("Error: unknown fluid " + fluid);
+            return;
+        }
+
+        onCommandRunPump(it->second, milliseconds);
     };
 
+    commandMap["fluidSetCalibration"]   = [](const String& args){
+        auto parts = splitArgs(args);
+
+        if (parts.size() < 3) {
+            Serial.println("Usage: fluidSetCalibration(fluidAlias,milliliters,milliseconds)");
+            return;
+        }
+
+        String fluid = parts[0];
+        float milliliters = parts[1].toFloat();
+        float milliseconds = parts[2].toFloat();
+
+        auto it = fluidToPumpMap.find(fluid);
+        
+        if (it == fluidToPumpMap.end()) {
+            Serial.println("Error: unknown fluid " + fluid);
+            return;
+        }
+
+        onCommandPumpSetCalibration(it->second, milliliters, milliseconds);
+    };
+    
     commandMap["spin"] = [](const String& args){
         auto parts = splitArgs(args);
 
@@ -201,9 +246,8 @@ void initCommands() {
     };
 
     // add new commands here!
-
     Serial.println("Commands initialized");
-  }
+}
 
 // Function to handle WebSocket messages
 void handleWebSocketMessage(void* arg, uint8_t* data, size_t len) {
@@ -287,10 +331,6 @@ void initWebSocket() {
 
 // Initialize pins
 void initPins() {
-    // Pump
-    pinMode(PUMP_ENABLE, OUTPUT);
-    digitalWrite(PUMP_ENABLE, LOW);      // Set the pump to LOW initially
-
     // Stepper A
     pinMode(STEPPER_A_STEP, OUTPUT);
     digitalWrite(STEPPER_A_STEP, LOW);   // Set the stepper to LOW initially
@@ -305,9 +345,11 @@ void initPins() {
     pinMode(STEPPER_B_SLEEP, OUTPUT);
     digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
 
-    // Peristaltic A
-    pinMode(PERISTALTIC_A, OUTPUT);
-    digitalWrite(PERISTALTIC_A, LOW);  // Set the peristaltic to LOW initially
+    // Tumeric
+    pinMode(TUMERIC_A, OUTPUT);
+    digitalWrite(TUMERIC_A, LOW);   // Set the stepper to LOW initially
+    pinMode(TUMERIC_B, OUTPUT);
+    digitalWrite(TUMERIC_B, LOW);   // Set the stepper to LOW initially
 }
 
 void setup() {
@@ -326,7 +368,11 @@ void loop() {
     // Do something:
     delay(500);
 
-
     // At the end:
     ws.cleanupClients();
+
+    chocolate.update();
+    caramelo.update();
+    vainilla.update();
+    agua.update();
 }
