@@ -5,6 +5,7 @@
 #include <secrets.h>
 #include <Pump.h>
 #include <StepperPowderDispenser.h>
+#include <ESPmDNS.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -47,6 +48,7 @@ static std::map<String, CmdHandler> commandMap;
 // ——— Global variables & constants ———
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
+#define SERVICE_PORT 80
 
 // Create a WebServer object
 AsyncWebServer server(80);
@@ -356,6 +358,19 @@ void initWebSocket() {
     Serial.println("WebSocket initialized");
 }
 
+// Initialize MDNS
+void initMDNS() {
+    if (!MDNS.begin("booster")) {
+        Serial.println("Error setting up MDNS responder!");
+        return;
+    }
+
+    Serial.println("MDNS responder started; domain is booster.local");
+
+    MDNS.addService("ws", "tcp", SERVICE_PORT);
+    Serial.printf("Registered service “_ws._tcp” on port %u\n", SERVICE_PORT);
+}
+
 // Initialize pins
 void initPins() {
     // Stepper A
@@ -391,6 +406,7 @@ void setup() {
     initPins();
     initWiFi();
     initWebSocket();
+    initMDNS();
     initCommands();
 
     // Start server
