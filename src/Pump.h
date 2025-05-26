@@ -71,8 +71,8 @@ private:
     String m_fluid_name = "Default Fluid Name";
     int m_drive_pin;
     float m_calibration_K; // in mL per second
-    bool m_isEnabled;
-
+    
+    bool m_isEnabled = false;
     bool m_isDispensing = false;
     unsigned long m_dispenseStartTime = 0;
     unsigned long m_dispenseDurationMs = 0;
