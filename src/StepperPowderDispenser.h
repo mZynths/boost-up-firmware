@@ -10,34 +10,49 @@ class StepperPowderDispenser {
 
 public:
     /**
-    * @param powder_name Name of the powder being dispensed
-    * @param step_pin STEP pin connected to the stepper driver
-    * @param step_interval Default delay between steps in microseconds (controls speed)
-    * @param pulse_duration Duration of STEP pin high pulse in microseconds
-    */
-    StepperPowderDispenser(String powder_name, int step_pin, unsigned long step_interval = 1000, unsigned long pulse_duration = 10);
-
-    /**
-     * @brief Constructs a StepperPowderDispenser with a default step interval and pulse duration.
-     * @param powder_name Name of the powder being dispensed.
-     * @param step_pin STEP pin connected to the stepper driver.
+     * @param powder_name Name of the powder being dispensed
+     * @param step_pin STEP pin connected to the stepper driver
+     * @param dir_pin STEP pin connected to the stepper driver
+     * @param sleep_pin SLEEP pin connected to the stepper driver
+     * @param steps_per_gram Steps needed to dispense 1 gram of powder
+     * @param step_interval Microseconds between steps
+     * @param pulse_duration Duration of pulse in microseconds
+     * @param steps_per_revolution Steps per revolution of the motor
+     * @param vibration_step_interval Microseconds between steps in vibration motion
+     * @param vibration_pulse_duration Duration of pulse in microseconds in vibration motion
+     * @param steps_per_vibration How many steps to take before vibrating in dispense motion
+     * @param dispense_is_CW Direction of the dispense motion (true for clockwise, false for counter-clockwise)
      */
-    StepperPowderDispenser(String powder_name, int step_pin);
+    StepperPowderDispenser(
+        String powder_name,
+        int step_pin,
+        int dir_pin,
+        int sleep_pin,
+        bool dispense_is_CW,
+        float steps_per_gram,
+        int step_interval,
+        int pulse_duration,
+        int steps_per_revolution,
+        int vibration_step_interval,
+        int vibration_pulse_duration,
+        int steps_per_vibration
+    );
 
-    /**
-     * @brief Constructs a StepperPowderDispenser with a default powder name, step interval, and pulse duration.
-     * @param step_pin STEP pin connected to the stepper driver.
-     */
-    StepperPowderDispenser(int step_pin);
+    StepperPowderDispenser(
+        int step_pin,
+        int dir_pin,
+        int sleep_pin,
+        bool dispense_is_CW,
+        float steps_per_gram
+    );
 
-    /**
-     * @brief Constructs a StepperPowderDispenser with a specific steps per gram, and default step interval and pulse duration.
-     * @param powder_name Name of the powder being dispensed.
-     * @param step_pin STEP pin connected to the stepper driver.
-     * @param steps_per_gram Initial calibration value (steps per gram).
-     */
-    StepperPowderDispenser(String powder_name, int step_pin, float steps_per_gram);
-
+    StepperPowderDispenser(
+        int step_pin,
+        int dir_pin,
+        int sleep_pin,
+        bool dispense_is_CW
+    );
+   
     /// @brief Allow motor to receive commands
     void enable();
 
@@ -62,6 +77,11 @@ public:
      * @param steps  Number of steps to spin
      */
     void spin(int steps);
+    
+    /**
+     * @brief Vibrates the motor for a fixed amount of time
+     */
+    void vibrate();
 
     /// @brief Non-blocking update to handle motor movement
     void update();
@@ -79,19 +99,7 @@ public:
      * @brief Set the steps per gram for calibration.
      * @param steps_per_gram The new steps per gram value.
      */
-    void setStepsPerGram(float steps_per_gram);
-
-    /**
-     * @brief Set the duration of the STEP pin high pulse.
-     * @param pulse_duration The new pulse duration in microseconds.
-     */
-    void setPulseDuration(unsigned long pulse_duration);
-
-    /**
-     * @brief Set the delay between steps.
-     * @param step_interval The new step interval in microseconds.
-     */
-    void setStepInterval(unsigned long step_interval);
+    void setStepsPerGram(int steps_per_gram);
 
     /**
      * @brief Prints the relevant tunable variables of the dispenser for debugging purposes.
@@ -99,17 +107,33 @@ public:
     void printDebugInfo();
 
 private:
-    String s_powderName;
-    int s_stepPin;
-    float s_stepsPerGram;
-    unsigned long s_pulseDuration;
-    unsigned long s_stepInterval;
-    int s_stepsRemaining;
-    bool s_isPulsing;
+    // Hardware variables
+    int s_step_pin;
+    int s_dir_pin;
+    int s_sleep_pin;
+
+    // Stepper motor timing
+    int s_step_interval;                // microseconds between steps
+    int s_pulse_duration;               // duration of pulse in microseconds
+    int s_steps_per_revolution;         // steps per revolution of the motor
+
+    // Vibration timing
+    int s_vibration_step_interval;      // microseconds between steps in vibration motion
+    int s_vibration_pulse_duration;     // duration of pulse in microseconds in vibration motion
+    
+    // Dispenser variables
+    String s_powder_name;
+    bool s_dispense_is_CW;               // steps per gram of powder dispensed
+    float s_steps_per_gram;               // steps per gram of powder dispensed
+    int s_steps_per_vibration;          // how many steps to take before vibrating
+    
+    // State variables
+    int s_steps_till_vibration;         // steps until next vibration
+    int s_steps_remaining;              // steps remaining in dispense motion
     unsigned long s_pulseStartTime;
     unsigned long s_stepStartTime;
-    bool s_enabled;
-
+    bool s_isPulsing = false;         
+    bool s_isEnabled = false;
 };
 
 #endif

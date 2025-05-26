@@ -1,141 +1,186 @@
 #include <StepperPowderDispenser.h>
+#include <Arduino.h>
 
 StepperPowderDispenser::StepperPowderDispenser(
-    String powder_name, 
-    int step_pin, 
-    unsigned long step_interval, 
-    unsigned long pulse_duration
-)
-    : s_powderName(powder_name), 
-    s_stepPin(step_pin), 
-    s_stepsPerGram(1.0f),
-    s_pulseDuration(pulse_duration), 
-    s_stepInterval(step_interval),
-    s_stepsRemaining(0), 
-    s_isPulsing(false), 
+    String powder_name,
+    int step_pin,
+    int sleep_pin,
+    int dir_pin,
+    bool dispense_is_CW,
+    float steps_per_gram,
+    int step_interval,
+    int pulse_duration,
+    int steps_per_revolution,
+    int vibration_step_interval,
+    int vibration_pulse_duration,
+    int steps_per_vibration
+):
+    s_powder_name(powder_name),
+    s_step_pin(step_pin),
+    s_dir_pin(dir_pin),
+    s_sleep_pin(sleep_pin),
+    s_dispense_is_CW(dispense_is_CW),
+    s_steps_per_gram(steps_per_gram),
+    s_step_interval(step_interval),
+    s_pulse_duration(pulse_duration),
+    s_steps_per_revolution(steps_per_revolution),
+    s_vibration_step_interval(vibration_step_interval),
+    s_vibration_pulse_duration(vibration_pulse_duration),
+    s_steps_per_vibration(steps_per_vibration),
+    s_steps_till_vibration(steps_per_vibration),
+    s_steps_remaining(0),
+    s_stepStartTime(0),
     s_pulseStartTime(0),
-    s_stepStartTime(0), 
-    s_enabled(false) 
+    s_isPulsing(false),
+    s_isEnabled(false)
 {
-    pinMode(s_stepPin, OUTPUT);
-    digitalWrite(s_stepPin, LOW);
+    pinMode(s_step_pin, OUTPUT);
+    digitalWrite(s_step_pin, LOW); // Make sure step pin is LOW initially
+    pinMode(s_dir_pin, OUTPUT);
+    digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Make sure step pin is LOW initially
+    pinMode(s_sleep_pin, OUTPUT);
+    digitalWrite(s_sleep_pin, LOW); // Make sure step pin is LOW initially;
 }
-
-// Existing constructors:
-StepperPowderDispenser::StepperPowderDispenser(
-    String powder_name, 
-    int step_pin
-)
-    : StepperPowderDispenser(powder_name, step_pin, 1000, 10) // Default step_interval = 1000us, pulse_duration = 10us
-{}
-
-StepperPowderDispenser::StepperPowderDispenser(int step_pin)
-    : StepperPowderDispenser("Some powder", step_pin, 1000, 10) // Default powder name "Some Powder"
-{}
-
-// New constructor that also sets steps per gram:
-StepperPowderDispenser::StepperPowderDispenser(String powder_name, int step_pin, float steps_per_gram)
-    : StepperPowderDispenser(powder_name, step_pin, 1000, 10) // Default step_interval = 1000us, pulse_duration = 10us
-{
-    s_stepsPerGram = steps_per_gram; // Set s_stepsPerGram after delegation
-}
-
 
 void StepperPowderDispenser::enable() {
-    s_enabled = true;
+    digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Set direction
+    digitalWrite(s_sleep_pin, HIGH); // Wake up the stepper driver
+    delay(1); // Wait for the driver to wake up
+
+    s_isEnabled = true;
 }
 
 void StepperPowderDispenser::disable() {
-    s_enabled = false;
-    s_stepsRemaining = 0;
-    digitalWrite(s_stepPin, LOW);
+    s_isEnabled = false;
+    s_steps_remaining = 0;
+    digitalWrite(s_step_pin, LOW);
+    digitalWrite(s_sleep_pin, LOW); // Put the stepper driver to sleep
     s_isPulsing = false;
 }
 
 void StepperPowderDispenser::calibrate(int steps, float grams_dispensed) {
     if (grams_dispensed > 0) {
-        s_stepsPerGram = static_cast<float>(steps) / grams_dispensed;
+        s_steps_per_gram = static_cast<float>(steps) / grams_dispensed;
     }
 }
 
 void StepperPowderDispenser::dispense(float grams) {
-    if (!s_enabled || grams <= 0 || s_stepsPerGram <= 0) return;
+    if (!s_isEnabled || grams <= 0 || s_steps_per_gram <= 0) return;
+
+    digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Set direction
     
-    s_stepsRemaining = static_cast<int>(grams * s_stepsPerGram);
+    // s_steps_till_vibration = s_steps_per_vibration;
+    
+    s_steps_remaining = static_cast<int>(grams * s_steps_per_gram);
     s_stepStartTime = micros();
 }
 
 void StepperPowderDispenser::spin(int steps) {
-    if (!s_enabled || steps <= 0) return;
+    if (!s_isEnabled || steps <= 0) return;
 
-    s_stepsRemaining = steps;
+    Serial.printf("Spinning %d steps\n", steps);
+    digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Set direction
+
+    s_steps_till_vibration = s_steps_per_vibration;
+
+    s_steps_remaining = steps;
     s_stepStartTime = micros();
 }
 
+void StepperPowderDispenser::vibrate() {
+    if (!s_isEnabled) return;
+
+    for (int x = 0; x < 60; x++) {
+        digitalWrite(s_dir_pin, LOW); // Set direction to LOW
+        delay(1); // Wait for DIR pin to stabilize
+
+        // Spin the stepper motor for 10 steps
+        for (int i = 0; i < 3; i++) {
+            digitalWrite(s_step_pin, HIGH);
+            delayMicroseconds(1000);
+            digitalWrite(s_step_pin, LOW);
+            delayMicroseconds(1000);
+        }
+
+        // Wait for the motor to stop
+        delay(4);
+
+        digitalWrite(s_dir_pin, HIGH); // Set direction to HIGH
+        delay(2); // Wait for DIR pin to stabilize
+        
+        // Spin the stepper motor for 10 steps
+        for (int i = 0; i < 3; i++) {
+            digitalWrite(s_step_pin, HIGH);
+            delayMicroseconds(1000);
+            digitalWrite(s_step_pin, LOW);
+            delayMicroseconds(1000);
+        }
+
+        delay(5);
+    }
+}
+
 void StepperPowderDispenser::update() {
-    if (!s_enabled || s_stepsRemaining <= 0) return;
+    if (!s_isEnabled || s_steps_remaining <= 0) return;
 
     unsigned long currentTime = micros();
 
     if (!s_isPulsing) {
         // Check if enough time passed since last step start
-        if ((currentTime - s_stepStartTime) >= s_stepInterval) {
-            digitalWrite(s_stepPin, HIGH);
+        if ((currentTime - s_stepStartTime) >= s_step_interval) {
+            digitalWrite(s_step_pin, HIGH);
             s_pulseStartTime = currentTime;
             s_isPulsing = true;
             s_stepStartTime = currentTime; // Reset timing for next step
         }
     } else {
         // Check if pulse duration completed
-        if ((currentTime - s_pulseStartTime) >= s_pulseDuration) {
-            digitalWrite(s_stepPin, LOW);
+        if ((currentTime - s_pulseStartTime) >= s_pulse_duration) {
+            digitalWrite(s_step_pin, LOW);
             s_isPulsing = false;
-            s_stepsRemaining--;
+            s_steps_remaining--;
+            // s_steps_till_vibration--;
+            // if (s_steps_till_vibration <= 0) {
+            //     vibrate();
+            //     s_steps_till_vibration = s_steps_per_vibration;
+            //     digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Set direction
+            //     delay(1000); // Wait for the powder to settle
+            // }
         }
     }
 }
 
 bool StepperPowderDispenser::isDispensing() {
-    return s_stepsRemaining > 0;
+    return s_steps_remaining > 0;
 }
 
 String StepperPowderDispenser::getPowderName() {
-    return s_powderName;
+    return s_powder_name;
 }
 
 void StepperPowderDispenser::setPowderName(String name) {
-    s_powderName = name;
+    s_powder_name = name;
 }
 
-void StepperPowderDispenser::setStepsPerGram(float steps_per_gram) {
-    s_stepsPerGram = steps_per_gram;
-}
-
-void StepperPowderDispenser::setPulseDuration(unsigned long pulse_duration) {
-    s_pulseDuration = pulse_duration;
-}
-
-void StepperPowderDispenser::setStepInterval(unsigned long step_interval) {
-    s_stepInterval = step_interval;
+void StepperPowderDispenser::setStepsPerGram(int steps_per_gram) {
+    s_steps_per_gram = steps_per_gram;
 }
 
 void StepperPowderDispenser::printDebugInfo() {
     Serial.println(F("--- Stepper Powder Dispenser Debug Info ---"));
     Serial.print(F("Powder Name: "));
-    Serial.println(s_powderName);
-    Serial.print(F("Step Pin: "));
-    Serial.println(s_stepPin);
+    Serial.println(s_powder_name);
     Serial.print(F("Steps Per Gram: "));
-    Serial.println(s_stepsPerGram, 4); // Print with 4 decimal places for precision
+    Serial.println(s_steps_per_gram, 4); // Print with 4 decimal places for precision
     Serial.print(F("Pulse Duration (us): "));
-    Serial.println(s_pulseDuration);
+    Serial.println(s_pulse_duration);
     Serial.print(F("Step Interval (us): "));
-    Serial.println(s_stepInterval);
+    Serial.println(s_step_interval);
     Serial.print(F("Steps Remaining: "));
-    Serial.println(s_stepsRemaining);
+    Serial.println(s_steps_remaining);
     Serial.print(F("Is Pulsing: "));
     Serial.println(s_isPulsing ? "True" : "False");
     Serial.print(F("Enabled: "));
-    Serial.println(s_enabled ? "True" : "False");
+    Serial.println(s_isEnabled ? "True" : "False");
     Serial.println(F("-----------------------------------------"));
 }

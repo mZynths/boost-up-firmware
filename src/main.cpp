@@ -4,6 +4,7 @@
 #include <functional>
 #include <secrets.h>
 #include <Pump.h>
+#include <StepperPowderDispenser.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -29,15 +30,16 @@ static std::map<String, CmdHandler> commandMap;
 #define PERISTALTIC_A  46
 #define PERISTALTIC_B   9 
 #define PERISTALTIC_C  10
-#define WATER_PUMP 2
+#define WATER_PUMP      2
+
+#define STEPPER_A_STEP   14  // STEP pin   14
+#define STEPPER_A_SLEEP  13  // SLEEP pin  13
+#define STEPPER_A_DIR     5  // DIR pin     5 
 
 // ——— Some other pins (migrating to objects) ———
-#define STEPPER_A_STEP   14  // STEP pin
-#define STEPPER_A_SLEEP  13  // SLEEP pin
-
-#define STEPPER_B_STEP   12  // STEP pin
-#define STEPPER_B_SLEEP  11  // SLEEP pin
-
+#define STEPPER_B_STEP   12  // STEP pin   12
+#define STEPPER_B_SLEEP  11  // SLEEP pin  11
+#define STEPPER_B_DIR     6  // DIR pin     6
 
 #define TUMERIC_A 35
 #define TUMERIC_B 36
@@ -46,14 +48,27 @@ static std::map<String, CmdHandler> commandMap;
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 
-bool pumpState = false;
-constexpr float STEPS_PER_REV = 200.0;
-
 // Create a WebServer object
 AsyncWebServer server(80);
 
 // Create a WebSocket object
 AsyncWebSocket ws("/ws");
+
+// Stepper objects
+StepperPowderDispenser proteina(
+    "Leche nido XD",
+    STEPPER_A_STEP,
+    STEPPER_A_SLEEP,
+    STEPPER_A_DIR,
+    false, // dispense clockwise
+    87.13371302,   // steps per gram
+    3000,  // step interval in microseconds
+    3000,  // pulse duration in microseconds
+    200,   // steps per revolution
+    1000,  // vibration step interval in microseconds
+    100,   // vibration pulse duration in microseconds
+    500    // steps per vibration
+);
 
 // Pump objects
 static std::map<String, Pump*> fluidToPumpMap;
@@ -127,48 +142,44 @@ void onCommandPumpSetCalibration(Pump* pump, float milliliters, float millisecon
     );
 }
 
-void onCommandSpin(float degrees, float seconds) {
-    if (seconds <= 0.0f) {
-        Serial.println("Error: duration must be > 0");
-        return;
-    }
-  
-    // compute how many full steps
-    long totalSteps = lround((degrees / 360.0f) * STEPS_PER_REV);
-    if (totalSteps == 0) {
-        Serial.println("Error: degrees too small to move any steps");
-        return;
-    }
-  
-    // half-pulse interval in µs so that:
-    unsigned long interval = (unsigned long)((seconds * 1e6) / (abs(totalSteps) * 2));
-  
-    Serial.printf(
-        "Spinning %.2f° → %ld steps over %.2f s (interval %lums)\n",
-        degrees, totalSteps, seconds, interval
-    );
-  
-    digitalWrite(STEPPER_A_SLEEP, HIGH);
-    delayMicroseconds(50);
-  
-    for (int i = 0; i < abs(totalSteps); i++) {
-        digitalWrite(STEPPER_A_STEP, HIGH);
-        delayMicroseconds(interval);
-        digitalWrite(STEPPER_A_STEP, LOW);
-        delayMicroseconds(interval);
-    }
-  
-    digitalWrite(STEPPER_A_SLEEP, LOW);
-    Serial.println("Spin complete.");
-}
-
 void initCommands() {
     fluidToPumpMap["chocolate"] = &chocolate;
     fluidToPumpMap["caramelo"]  = &caramelo;
     fluidToPumpMap["vainilla"]  = &vainilla;
     fluidToPumpMap["agua"]      = &agua;
 
-    commandMap["fluidPump"]   = [](const String& args){
+    commandMap["powderDisp"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 1) {
+            Serial.println("Usage: powderDisp(grams)");
+            return;
+        }
+
+        float grams = parts[0].toFloat();
+
+        proteina.enable();
+        proteina.dispense(grams);
+    };
+
+    commandMap["spin"] = [](const String&){
+        proteina.enable();
+        proteina.spin(100);
+    };
+    
+    commandMap["vib"] = [](const String&){
+        proteina.enable();
+        proteina.vibrate();
+    };
+
+    commandMap["dis"] = [](const String&){
+        proteina.disable();
+    };
+
+    commandMap["en"] = [](const String&){
+        proteina.enable();
+    };
+
+    commandMap["fluidPump"] = [](const String& args){
         auto parts = splitArgs(args);
 
         if (parts.size() < 2) {
@@ -189,7 +200,7 @@ void initCommands() {
         onCommandDispenseFluid(it->second, milliliters);
     };
 
-    commandMap["fluidSpin"]   = [](const String& args){
+    commandMap["fluidSpin"] = [](const String& args){
         auto parts = splitArgs(args);
 
         if (parts.size() < 2) {
@@ -210,7 +221,7 @@ void initCommands() {
         onCommandRunPump(it->second, milliseconds);
     };
 
-    commandMap["fluidSetCalibration"]   = [](const String& args){
+    commandMap["fluidSetCalibration"] = [](const String& args){
         auto parts = splitArgs(args);
 
         if (parts.size() < 3) {
@@ -232,19 +243,6 @@ void initCommands() {
         onCommandPumpSetCalibration(it->second, milliliters, milliseconds);
     };
     
-    commandMap["spin"] = [](const String& args){
-        auto parts = splitArgs(args);
-
-        if (parts.size() < 2) {
-            Serial.println("Usage: spin(degrees,seconds)");
-            return;
-        }
-
-        float degrees = parts[0].toFloat();
-        float seconds = parts[1].toFloat();
-        onCommandSpin(degrees, seconds);
-    };
-
     // add new commands here!
     Serial.println("Commands initialized");
 }
@@ -332,13 +330,19 @@ void initWebSocket() {
 // Initialize pins
 void initPins() {
     // Stepper A
-    pinMode(STEPPER_A_STEP, OUTPUT);
-    digitalWrite(STEPPER_A_STEP, LOW);   // Set the stepper to LOW initially
-    
-    pinMode(STEPPER_A_SLEEP, OUTPUT);
-    digitalWrite(STEPPER_A_SLEEP, LOW);  // Set the stepper to LOW initially
+    // pinMode(STEPPER_A_DIR, OUTPUT);
+    // digitalWrite(STEPPER_A_DIR, LOW);   // Set the stepper to LOW initially
 
+    // pinMode(STEPPER_A_STEP, OUTPUT);
+    // digitalWrite(STEPPER_A_STEP, LOW);   // Set the stepper to LOW initially
+    
+    // pinMode(STEPPER_A_SLEEP, OUTPUT);
+    // digitalWrite(STEPPER_A_SLEEP, LOW);  // Set the stepper to LOW initially
+    
     // Stepper B
+    pinMode(STEPPER_B_DIR, OUTPUT);
+    digitalWrite(STEPPER_B_DIR, LOW);   // Set the stepper to LOW initially
+
     pinMode(STEPPER_B_STEP, OUTPUT);
     digitalWrite(STEPPER_B_STEP, LOW);   // Set the stepper to LOW initially
     
@@ -366,7 +370,7 @@ void setup() {
 
 void loop() {
     // Do something:
-    delay(500);
+    // delay(500);
 
     // At the end:
     ws.cleanupClients();
@@ -375,4 +379,6 @@ void loop() {
     caramelo.update();
     vainilla.update();
     agua.update();
+
+    proteina.update();
 }
