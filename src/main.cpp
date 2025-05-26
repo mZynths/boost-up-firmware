@@ -142,11 +142,40 @@ void onCommandPumpSetCalibration(Pump* pump, float milliliters, float millisecon
     );
 }
 
+void onCommandBlink(int times) {
+    if (times <= 0) {
+        Serial.println("Error: times must be > 0");
+        return;
+    }
+
+    Serial.printf("Blinking LED %d times\n", times);
+    
+    for (int i = 0; i < times; i++) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(100);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(100);
+    }
+
+    Serial.println("Done blinking");
+}
+
 void initCommands() {
     fluidToPumpMap["chocolate"] = &chocolate;
     fluidToPumpMap["caramelo"]  = &caramelo;
     fluidToPumpMap["vainilla"]  = &vainilla;
     fluidToPumpMap["agua"]      = &agua;
+
+    commandMap["blink"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 1) {
+            Serial.println("Usage: blink(times)");
+            return;
+        }
+
+        int times = parts[0].toInt();
+        onCommandBlink(times);
+    };
 
     commandMap["powderDisp"] = [](const String& args){
         auto parts = splitArgs(args);
