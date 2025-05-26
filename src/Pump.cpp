@@ -31,10 +31,16 @@ void Pump::disable() {
     digitalWrite(m_drive_pin, LOW); // Immediately turn off pump when disabled
 }
 
-void Pump::set_calibration(int milliseconds_run, float milliliters_dispensed) {
+void Pump::calibrate(int milliseconds_run, float milliliters_dispensed) {
     if (milliseconds_run > 0) {
         m_calibration_K = (milliliters_dispensed * 1000.0f) / milliseconds_run;
         // calibration_K is mL/sec, so convert ms to sec by dividing by 1000
+    }
+}
+
+void Pump::set_calibration(float mL_per_second) {
+    if (mL_per_second > 0) {
+        m_calibration_K = mL_per_second;
     }
 }
 

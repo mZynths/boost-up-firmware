@@ -29,7 +29,13 @@ public:
      * @param milliseconds_run       Time the pump was run in milliseconds.
      * @param milliliters_dispensed  Volume that was dispensed in mL.
      */
-    void set_calibration(int milliseconds_run, float milliliters_dispensed);
+    void calibrate(int milliseconds_run, float milliliters_dispensed);
+
+    /**
+     * @brief Sets the calibration factor directly.
+     * @param mL_per_second  Calibration factor in mL per second.
+     */
+    void set_calibration(float mL_per_second);
 
     /**
      * @brief Dispenses a precise amount of fluid.

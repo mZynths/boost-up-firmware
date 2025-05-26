@@ -57,7 +57,22 @@ AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 // Stepper objects
+static std::map<String, StepperPowderDispenser*> proteinToDispenserMap;
 StepperPowderDispenser proteina(
+    "Pure Health",
+    STEPPER_B_STEP,
+    STEPPER_B_SLEEP,
+    STEPPER_B_DIR,
+    false, // dispense clockwise
+    87.13371302,   // steps per gram
+    3000,  // step interval in microseconds
+    3000,  // pulse duration in microseconds
+    200,   // steps per revolution
+    1000,  // vibration step interval in microseconds
+    100,   // vibration pulse duration in microseconds
+    500    // steps per vibration
+);
+StepperPowderDispenser nido(
     "Leche nido XD",
     STEPPER_A_STEP,
     STEPPER_A_SLEEP,
@@ -79,7 +94,27 @@ Pump caramelo("Jarabe de Caramelo", PERISTALTIC_B, 1.0f);
 Pump vainilla("Jarabe de Vainilla", PERISTALTIC_C, 1.0f);
 Pump agua("Agua", WATER_PUMP, 1.0f);
 
-void onCommandDispenseFluid(Pump* pump, float milliliters) {
+// Debuging commands
+void onCommandBlink(int times) {
+    if (times <= 0) {
+        Serial.println("Error: times must be > 0");
+        return;
+    }
+
+    Serial.printf("Blinking LED %d times\n", times);
+    
+    for (int i = 0; i < times; i++) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(100);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(100);
+    }
+
+    Serial.println("Done blinking");
+}
+
+// Pump commands
+void onCommandPumpFluid(Pump* pump, float milliliters) {
     if (milliliters <= 0.0f) {
         Serial.println("Error: duration must be > 0");
         return;
@@ -101,7 +136,7 @@ void onCommandDispenseFluid(Pump* pump, float milliliters) {
     pump->disable();
 }
 
-void onCommandRunPump(Pump* pump, float milliseconds) {
+void onCommandFluidSpin(Pump* pump, float milliseconds) {
     if (milliseconds <= 0.0f) {
         Serial.println("Error: duration must be > 0");
         return;
@@ -123,51 +158,89 @@ void onCommandRunPump(Pump* pump, float milliseconds) {
     pump->disable();
 }
 
-void onCommandPumpSetCalibration(Pump* pump, float milliliters, float milliseconds) {
-    if (milliliters <= 0.0f) {
-        Serial.println("Error: duration must be > 0");
-        return;
-    }
-    
-    if (milliseconds <= 0.0f) {
-        Serial.println("Error: duration must be > 0");
+void onCommandFluidSetMlPerSecond(Pump* pump, float millilitersPerSecond) {
+    if (millilitersPerSecond <= 0.0f) {
+        Serial.println("Error: millilitersPerSecond must be > 0");
         return;
     }
 
-    pump->set_calibration(milliseconds, milliliters);
-
+    pump->set_calibration(millilitersPerSecond);
     Serial.printf(
-        "Set calibration for %s: %.2f mL over %.2f ms\n",
+        "Set %s calibration to %.2f mL/s\n",
         pump->getFluidName().c_str(),
-        milliliters,
-        milliseconds
+        millilitersPerSecond
     );
 }
 
-void onCommandBlink(int times) {
-    if (times <= 0) {
-        Serial.println("Error: times must be > 0");
+// Powder dispenser commands
+void onCommandDispenserSpin(StepperPowderDispenser* dispenser, int steps) {
+    if (steps <= 0) {
+        Serial.println("Error: steps must be > 0");
         return;
     }
 
-    Serial.printf("Blinking LED %d times\n", times);
+    Serial.printf("Spinning %s for %d steps\n", dispenser->getPowderName().c_str(), steps);
     
-    for (int i = 0; i < times; i++) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(100);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(100);
+    dispenser->enable();
+    dispenser->spin(steps);
+    
+    while (dispenser->isDispensing()) {
+        dispenser->update();
     }
-
-    Serial.println("Done blinking");
+    
+    dispenser->disable();
 }
 
+void onCommandDispensePowder(StepperPowderDispenser* dispenser, float grams) {
+    if (grams <= 0.0f) {
+        Serial.println("Error: grams must be > 0");
+        return;
+    }
+
+    Serial.printf("Dispensing %.2f grams of %s\n", grams, dispenser->getPowderName().c_str());
+    
+    dispenser->enable();
+    dispenser->dispense(grams);
+    
+    while (dispenser->isDispensing()) {
+        dispenser->update();
+    }
+    
+    dispenser->disable();
+}
+
+void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, float grams) {
+    if (steps <= 0) {
+        Serial.println("Error: steps must be > 0");
+        return;
+    }
+
+    if (grams <= 0.0f) {
+        Serial.println("Error: grams must be > 0");
+        return;
+    }
+
+    dispenser->calibrate(steps, grams);
+    
+    Serial.printf(
+        "Calibrated %s: %d steps for %.2f grams\n",
+        dispenser->getPowderName().c_str(),
+        steps,
+        grams
+    );
+}
+
+// Initialize commands and their handlers
 void initCommands() {
     fluidToPumpMap["chocolate"] = &chocolate;
     fluidToPumpMap["caramelo"]  = &caramelo;
     fluidToPumpMap["vainilla"]  = &vainilla;
     fluidToPumpMap["agua"]      = &agua;
 
+    proteinToDispenserMap["proteina"] = &proteina;
+    proteinToDispenserMap["nido"] = &nido;
+
+    // Debuging commands
     commandMap["blink"] = [](const String& args){
         auto parts = splitArgs(args);
         if (parts.size() < 1) {
@@ -179,37 +252,7 @@ void initCommands() {
         onCommandBlink(times);
     };
 
-    commandMap["powderDisp"] = [](const String& args){
-        auto parts = splitArgs(args);
-        if (parts.size() < 1) {
-            Serial.println("Usage: powderDisp(grams)");
-            return;
-        }
-
-        float grams = parts[0].toFloat();
-
-        proteina.enable();
-        proteina.dispense(grams);
-    };
-
-    commandMap["spin"] = [](const String&){
-        proteina.enable();
-        proteina.spin(100);
-    };
-    
-    commandMap["vib"] = [](const String&){
-        proteina.enable();
-        proteina.vibrate();
-    };
-
-    commandMap["dis"] = [](const String&){
-        proteina.disable();
-    };
-
-    commandMap["en"] = [](const String&){
-        proteina.enable();
-    };
-
+    // Pump commands
     commandMap["fluidPump"] = [](const String& args){
         auto parts = splitArgs(args);
 
@@ -228,7 +271,7 @@ void initCommands() {
             return;
         }
 
-        onCommandDispenseFluid(it->second, milliliters);
+        onCommandPumpFluid(it->second, milliliters);
     };
 
     commandMap["fluidSpin"] = [](const String& args){
@@ -249,20 +292,19 @@ void initCommands() {
             return;
         }
 
-        onCommandRunPump(it->second, milliseconds);
+        onCommandFluidSpin(it->second, milliseconds);
     };
 
-    commandMap["fluidSetCalibration"] = [](const String& args){
+    commandMap["fluidSetmlPerSecond"] = [](const String& args){
         auto parts = splitArgs(args);
 
-        if (parts.size() < 3) {
-            Serial.println("Usage: fluidSetCalibration(fluidAlias,milliliters,milliseconds)");
+        if (parts.size() < 2) {
+            Serial.println("Usage: fluidSetmlPerSecond(fluidAlias,millilitersPerSecond)");
             return;
         }
 
         String fluid = parts[0];
-        float milliliters = parts[1].toFloat();
-        float milliseconds = parts[2].toFloat();
+        float millilitersPerSecond = parts[1].toFloat();
 
         auto it = fluidToPumpMap.find(fluid);
         
@@ -271,10 +313,72 @@ void initCommands() {
             return;
         }
 
-        onCommandPumpSetCalibration(it->second, milliliters, milliseconds);
+        onCommandFluidSetMlPerSecond(it->second, millilitersPerSecond);
     };
-    
-    // add new commands here!
+
+    // Powder dispenser commands
+    commandMap["powderSpin"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 2) {
+            Serial.println("Usage: powderSpin(powderAlias,steps)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        int steps = parts[1].toInt();
+
+        auto it = proteinToDispenserMap.find(powderAlias);
+        
+        if (it == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        onCommandDispenserSpin(it->second, steps);
+    };
+
+    commandMap["powderDispense"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 2) {
+            Serial.println("Usage: powderDispense(powderAlias,grams)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        float grams = parts[1].toFloat();
+
+        auto it = proteinToDispenserMap.find(powderAlias);
+        
+        if (it == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        onCommandDispensePowder(it->second, grams);
+    };
+
+    commandMap["dispenserSetStepsPerGram"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 2) {
+            Serial.println("Usage: dispenserSetStepsPerGram(powderAlias,stepsPerGram)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        int stepsPerGram = parts[1].toInt();
+
+        auto it = proteinToDispenserMap.find(powderAlias);
+        
+        if (it == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        it->second->setStepsPerGram(stepsPerGram);
+        Serial.printf("Set %s steps per gram to %d\n", powderAlias.c_str(), stepsPerGram);
+    };
+
+    // more commands can be added here
     Serial.println("Commands initialized");
 }
 
