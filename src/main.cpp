@@ -6,6 +6,7 @@
 #include <Pump.h>
 #include <StepperPowderDispenser.h>
 #include <ESPmDNS.h>
+#include <Adafruit_Sensor.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -38,9 +39,9 @@ static std::map<String, CmdHandler> commandMap;
 #define STEPPER_A_DIR     5  // DIR pin     5 
 
 // ——— Some other pins (migrating to objects) ———
-#define STEPPER_B_STEP   12  // STEP pin   12
-#define STEPPER_B_SLEEP  11  // SLEEP pin  11
-#define STEPPER_B_DIR     6  // DIR pin     6
+#define STEPPER_B_STEP    15  // STEP pin   12
+#define STEPPER_B_SLEEP    7  // SLEEP pin  11
+#define STEPPER_B_DIR      6  // DIR pin     6
 
 #define TUMERIC_A 35
 #define TUMERIC_B 36
@@ -230,15 +231,19 @@ void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, f
     );
 }
 
+void onCommandReadHumidity() {
+
+}
+
 // Initialize commands and their handlers
 void initCommands() {
-    fluidToPumpMap["chocolate"] = &chocolate;
-    fluidToPumpMap["caramelo"]  = &caramelo;
-    fluidToPumpMap["vainilla"]  = &vainilla;
-    fluidToPumpMap["agua"]      = &agua;
+    fluidToPumpMap["1"] = &chocolate;
+    fluidToPumpMap["2"]  = &caramelo;
+    fluidToPumpMap["3"]  = &vainilla;
+    fluidToPumpMap["a"]      = &agua;
 
-    proteinToDispenserMap["proteina"] = &proteina;
-    proteinToDispenserMap["nido"] = &nido;
+    proteinToDispenserMap["1"] = &proteina;
+    proteinToDispenserMap["2"] = &nido;
 
     // Debuging commands
     commandMap["blink"] = [](const String& args){
@@ -378,6 +383,44 @@ void initCommands() {
         Serial.printf("Set %s steps per gram to %d\n", powderAlias.c_str(), stepsPerGram);
     };
 
+    commandMap["enableDispenser"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 1) {
+            Serial.println("Usage: enableDispenser(powderAlias)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        auto it = proteinToDispenserMap.find(powderAlias);
+        
+        if (it == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        it->second->enable();
+        Serial.printf("Enabled %s dispenser\n", powderAlias.c_str());
+    };
+
+    commandMap["disableDispenser"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 1) {
+            Serial.println("Usage: disableDispenser(powderAlias)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        auto it = proteinToDispenserMap.find(powderAlias);
+        
+        if (it == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        it->second->disable();
+        Serial.printf("Disabled %s dispenser\n", powderAlias.c_str());
+    };
+
     // more commands can be added here
     Serial.println("Commands initialized");
 }
@@ -477,6 +520,10 @@ void initMDNS() {
 
 // Initialize pins
 void initPins() {
+    // Built-in LED
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW); // Set the LED to LOW initially
+
     // Stepper A
     // pinMode(STEPPER_A_DIR, OUTPUT);
     // digitalWrite(STEPPER_A_DIR, LOW);   // Set the stepper to LOW initially
@@ -488,20 +535,22 @@ void initPins() {
     // digitalWrite(STEPPER_A_SLEEP, LOW);  // Set the stepper to LOW initially
     
     // Stepper B
-    pinMode(STEPPER_B_DIR, OUTPUT);
-    digitalWrite(STEPPER_B_DIR, LOW);   // Set the stepper to LOW initially
+    // pinMode(STEPPER_B_DIR, OUTPUT);
+    // digitalWrite(STEPPER_B_DIR, LOW);   // Set the stepper to LOW initially
 
-    pinMode(STEPPER_B_STEP, OUTPUT);
-    digitalWrite(STEPPER_B_STEP, LOW);   // Set the stepper to LOW initially
+    // pinMode(STEPPER_B_STEP, OUTPUT);
+    // digitalWrite(STEPPER_B_STEP, LOW);   // Set the stepper to LOW initially
     
-    pinMode(STEPPER_B_SLEEP, OUTPUT);
-    digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
+    // pinMode(STEPPER_B_SLEEP, OUTPUT);
+    // digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
 
     // Tumeric
     pinMode(TUMERIC_A, OUTPUT);
     digitalWrite(TUMERIC_A, LOW);   // Set the stepper to LOW initially
     pinMode(TUMERIC_B, OUTPUT);
     digitalWrite(TUMERIC_B, LOW);   // Set the stepper to LOW initially
+
+    Serial.println("Pins initialized");
 }
 
 void setup() {

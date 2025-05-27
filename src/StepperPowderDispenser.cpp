@@ -45,7 +45,7 @@ StepperPowderDispenser::StepperPowderDispenser(
 void StepperPowderDispenser::enable() {
     digitalWrite(s_dir_pin, s_dispense_is_CW ? HIGH : LOW); // Set direction
     digitalWrite(s_sleep_pin, HIGH); // Wake up the stepper driver
-    delay(1); // Wait for the driver to wake up
+    delay(5); // Wait for the driver to wake up
 
     s_isEnabled = true;
 }
