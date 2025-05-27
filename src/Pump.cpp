@@ -80,6 +80,7 @@ void Pump::update() {
             digitalWrite(m_drive_pin, LOW);
             m_isDispensing = false;
             Serial.println("Dispense complete.");
+            disable(); // Disable pump after dispensing
         }
     }
 }

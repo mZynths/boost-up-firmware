@@ -36,11 +36,10 @@ static std::map<String, CmdHandler> commandMap;
 #define PERISTALTIC_C  10
 #define WATER_PUMP      2
 
-#define STEPPER_A_STEP   14  // STEP pin   14
-#define STEPPER_A_SLEEP  13  // SLEEP pin  13
-#define STEPPER_A_DIR     5  // DIR pin     5 
+#define STEPPER_A_STEP   14   // STEP pin   14
+#define STEPPER_A_SLEEP  13   // SLEEP pin  13
+#define STEPPER_A_DIR     5   // DIR pin     5 
 
-// ——— Some other pins (migrating to objects) ———
 #define STEPPER_B_STEP    15  // STEP pin   12
 #define STEPPER_B_SLEEP    7  // SLEEP pin  11
 #define STEPPER_B_DIR      6  // DIR pin     6
@@ -50,7 +49,19 @@ static std::map<String, CmdHandler> commandMap;
 
 #define DHTPIN 17
 
-#define DHTTYPE    DHT11
+#define DHTTYPE DHT11
+
+// State machine
+#define NOT_PREPARING -1
+#define START_ORDER 0
+#define WATER_PUMPING 1
+#define PROTEIN_DISPENSING 2
+#define FLAVOR_PUMPING 3
+#define TUMERIC_DISPENSING 4
+#define FINISH_ORDER 5
+
+int state = NOT_PREPARING;
+
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
 // ——— Global variables & constants ———
@@ -97,10 +108,12 @@ StepperPowderDispenser nido(
 
 // Pump objects
 static std::map<String, Pump*> fluidToPumpMap;
-Pump chocolate("Jarabe de Chocolate", PERISTALTIC_A, 1.0f);
-Pump caramelo("Jarabe de Caramelo", PERISTALTIC_B, 1.0f);
-Pump vainilla("Jarabe de Vainilla", PERISTALTIC_C, 1.0f);
-Pump agua("Agua", WATER_PUMP, 1.0f);
+Pump chocolate("Saborizante de Chocolate", PERISTALTIC_A, 1.8f);
+Pump caramelo("Saborizante de Vainilla", PERISTALTIC_B, 1.53f);
+Pump vainilla("Saborizante de Fresa", PERISTALTIC_C, 1.56f);
+Pump agua("Agua", WATER_PUMP, 32.83f);
+
+Pump tumeric("Tumeric", TUMERIC_A, 0.1f);
 
 // Debuging commands
 void onCommandBlink(int times) {
@@ -136,12 +149,6 @@ void onCommandPumpFluid(Pump* pump, float milliliters) {
 
     pump->enable();
     pump->dispense(milliliters);
-    
-    while (pump->isDispensing()) {
-        pump->update();
-    }
-    
-    pump->disable();
 }
 
 void onCommandFluidSpin(Pump* pump, float milliseconds) {
@@ -158,12 +165,6 @@ void onCommandFluidSpin(Pump* pump, float milliseconds) {
 
     pump->enable();
     pump->spin(milliseconds);
-
-    while (pump->isDispensing()) {
-        pump->update();
-    }
-
-    pump->disable();
 }
 
 void onCommandFluidSetMlPerSecond(Pump* pump, float millilitersPerSecond) {
@@ -191,12 +192,6 @@ void onCommandDispenserSpin(StepperPowderDispenser* dispenser, int steps) {
     
     dispenser->enable();
     dispenser->spin(steps);
-    
-    while (dispenser->isDispensing()) {
-        dispenser->update();
-    }
-    
-    dispenser->disable();
 }
 
 void onCommandDispensePowder(StepperPowderDispenser* dispenser, float grams) {
@@ -209,12 +204,6 @@ void onCommandDispensePowder(StepperPowderDispenser* dispenser, float grams) {
     
     dispenser->enable();
     dispenser->dispense(grams);
-    
-    while (dispenser->isDispensing()) {
-        dispenser->update();
-    }
-    
-    dispenser->disable();
 }
 
 void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, float grams) {
@@ -239,19 +228,71 @@ void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, f
 }
 
 void onCommandReadHumidity() {
-    sensors_event_t event;
 
-    // Read humidity from the DHT sensor
-    dht.humidity().getEvent(&event);
-    if (isnan(event.relative_humidity)) {
-        Serial.println(F("Error reading humidity!"));
+    float averageHumidity = 0.0f;
+
+    // make 10 readings to get an average
+    for (int i = 0; i < 10; i++) {
+        sensors_event_t event;
+        dht.humidity().getEvent(&event);
+        if (isnan(event.relative_humidity)) {
+            Serial.println(F("Error reading humidity!"));
+            return;
+        }
+        averageHumidity += event.relative_humidity;
+        delay(100); // wait a bit between readings
     }
-    else {
-        Serial.print(F("Humidity: "));
-        Serial.print(event.relative_humidity);
-        Serial.println(F("%"));
+    
+    averageHumidity /= 10.0f;
+    Serial.print(F("Average Humidity: "));
+    Serial.print(averageHumidity);
+    Serial.println(F("%"));
+    // Send average humidity data over WebSocket
+    String humidityData = String(averageHumidity);
+    ws.textAll(humidityData);
+}
+
+void onCommandDispenseTumeric(float grams) {
+    if (grams <= 0.0f) {
+        Serial.println("Error: grams must be > 0");
+        return;
     }
 
+    Serial.printf("Dispensing %.2f grams of Tumeric\n", grams);
+    
+    tumeric.enable();
+    tumeric.dispense(grams);
+}
+
+// Order to prepare variables
+static StepperPowderDispenser* orderDispenser = nullptr; 
+static float orderGrams = 0.0f;
+static Pump* orderPump = nullptr;
+static float orderMilliliters = 0.0f;
+static float orderTumericGrams = 0.0f;
+
+// Receives the dispenser, the amount in grams, the pump, the amount in mL, and ammount of tumeric in grams
+void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump* pump, float milliliters, float tumericGrams) {
+    if (grams <= 0.0f || milliliters <= 0.0f) {
+        Serial.println("Error: grams and ml amounts must be > 0");
+        return;
+    }
+
+    Serial.printf("Preparing drink with %.2f grams of %s, %.2f mL of %s, and %.2f grams of Tumeric\n",
+        grams, dispenser->getPowderName().c_str(),
+        milliliters, pump->getFluidName().c_str(),
+        tumericGrams
+    );
+
+    // Start the preparation process
+    state = START_ORDER;
+    // Set lastOrderVariables
+    orderDispenser = dispenser;
+    orderGrams = grams;
+    orderPump = pump;
+    orderMilliliters = milliliters;
+    orderTumericGrams = tumericGrams;
+    Serial.println("Drink preparation started");
 }
 
 // Initialize commands and their handlers
@@ -445,8 +486,103 @@ void initCommands() {
         onCommandReadHumidity();
     };
 
+    commandMap["prepare"] = [](const String& args){
+        auto parts = splitArgs(args);
+        if (parts.size() < 4) {
+            Serial.println("Usage: prepare(powderAlias,grams,fluidAlias,milliliters,tumericGrams)");
+            return;
+        }
+
+        String powderAlias = parts[0];
+        float grams = parts[1].toFloat();
+        String fluidAlias = parts[2];
+        float milliliters = parts[3].toFloat();
+        float tumericGrams = parts.size() > 4 ? parts[4].toFloat() : 0.0f;
+
+        auto powderIt = proteinToDispenserMap.find(powderAlias);
+        if (powderIt == proteinToDispenserMap.end()) {
+            Serial.println("Error: unknown powder " + powderAlias);
+            return;
+        }
+
+        auto fluidIt = fluidToPumpMap.find(fluidAlias);
+        if (fluidIt == fluidToPumpMap.end()) {
+            Serial.println("Error: unknown fluid " + fluidAlias);
+            return;
+        }
+
+        onCommandPrepareDrink(powderIt->second, grams, fluidIt->second, milliliters, tumericGrams);
+    };
+
     // more commands can be added here
     Serial.println("Commands initialized");
+}
+
+void updateStateMachine(){
+    if (state == NOT_PREPARING) {
+        // Not preparing anything
+        return;
+    } else if (state == START_ORDER) {
+        // Start the order
+        Serial.println("Starting order preparation");
+        state = WATER_PUMPING;
+        agua.enable();
+        agua.dispense(350.0f); // Dispense 350 mL of water
+    } else if (state == WATER_PUMPING) {
+        if (!agua.isDispensing()) {
+            Serial.println("Water pumping done, dispensing protein");
+            delay(2000); // Wait for 1 second before dispensing protein
+            state = PROTEIN_DISPENSING;
+            orderDispenser->enable();
+            orderDispenser->dispense(orderGrams);
+        }
+    } else if (state == PROTEIN_DISPENSING) {
+        if (!orderDispenser->isDispensing()) {
+            Serial.println("Protein dispensing done, pumping flavor");
+            state = FLAVOR_PUMPING;
+            orderPump->enable();
+            orderPump->dispense(orderMilliliters);
+        }
+    } else if (state == FLAVOR_PUMPING) {
+        if (!orderPump->isDispensing()) {
+            Serial.println("Flavor pumping done, dispensing Tumeric");
+            state = TUMERIC_DISPENSING;
+            // Start dispensing tumeric
+            tumeric.enable();
+            tumeric.dispense(orderTumericGrams);
+        }
+    } else if (state == TUMERIC_DISPENSING) {
+        if (!tumeric.isDispensing()) {
+            orderPump->disable(); // Disable flavor pump
+            // Tumeric dispensing is done
+            Serial.println("Tumeric dispensing done");
+            state = FINISH_ORDER;
+            tumeric.disable(); // Disable tumeric pump
+        }
+    } else if (state == FINISH_ORDER) {
+        // Order finished, reset state
+        Serial.println("Order finished");
+        
+        // Let the websocket clients know
+        ws.textAll("Order finished");
+        // Reset order variables
+        orderDispenser = nullptr;
+        orderGrams = 0.0f;
+        orderPump = nullptr;
+        orderMilliliters = 0.0f;
+        orderTumericGrams = 0.0f;
+
+        state = NOT_PREPARING;
+
+        // Disable all dispensers and pumps
+        proteina.disable();
+        nido.disable();
+        chocolate.disable();
+        caramelo.disable();
+        vainilla.disable();
+        agua.disable();
+        tumeric.disable();
+    }
 }
 
 // Function to handle WebSocket messages
@@ -597,10 +733,13 @@ void loop() {
     // At the end:
     ws.cleanupClients();
 
+    updateStateMachine();
     chocolate.update();
     caramelo.update();
     vainilla.update();
     agua.update();
 
     proteina.update();
+    nido.update();
+    tumeric.update();
 }
