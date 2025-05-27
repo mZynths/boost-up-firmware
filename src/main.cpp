@@ -7,6 +7,8 @@
 #include <StepperPowderDispenser.h>
 #include <ESPmDNS.h>
 #include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -45,6 +47,11 @@ static std::map<String, CmdHandler> commandMap;
 
 #define TUMERIC_A 35
 #define TUMERIC_B 36
+
+#define DHTPIN 17
+
+#define DHTTYPE    DHT11
+DHT_Unified dht(DHTPIN, DHTTYPE);
 
 // ——— Global variables & constants ———
 const char *ssid = WIFI_SSID;
@@ -232,6 +239,18 @@ void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, f
 }
 
 void onCommandReadHumidity() {
+    sensors_event_t event;
+
+    // Read humidity from the DHT sensor
+    dht.humidity().getEvent(&event);
+    if (isnan(event.relative_humidity)) {
+        Serial.println(F("Error reading humidity!"));
+    }
+    else {
+        Serial.print(F("Humidity: "));
+        Serial.print(event.relative_humidity);
+        Serial.println(F("%"));
+    }
 
 }
 
@@ -419,6 +438,11 @@ void initCommands() {
 
         it->second->disable();
         Serial.printf("Disabled %s dispenser\n", powderAlias.c_str());
+    };
+
+    // DHT commands
+    commandMap["readHumidity"] = [](const String& args){
+        onCommandReadHumidity();
     };
 
     // more commands can be added here
