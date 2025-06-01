@@ -13,15 +13,16 @@ public:
      * @param fluid_name     The name of the dispensed fluid.
      * @param drive_pin      GPIO pin to control the pump motor.
      * @param calibration_K  Calibration factor in mL per second.
+     * @param negated_logic  Whether the pump uses negated logic (LOW = on, HIGH = off).
      */
-    Pump(String fluid_name, int drive_pin, float calibration_K);
-    Pump(String fluid_name, int drive_pin);
-    Pump(int drive_pin);
+    Pump(String fluid_name, int drive_pin, float calibration_K, bool negated_logic);
+    Pump(String fluid_name, int drive_pin, bool negated_logic);
+    Pump(int drive_pin, bool negated_logic);
 
     /// @brief Lets the pump receive commands.
     void enable();
 
-    /// @brief Prevents the pump from receiveing commands.
+    /// @brief Prevents the pump from receiving commands.
     void disable();
 
     /**
@@ -67,17 +68,21 @@ public:
     bool isEnabled();
 
     /**
-     * @brief Returns the Flavor of the pump.
-     * @return Name of the pump.
+     * @brief Returns the name of the fluid this pump handles.
+     * @return Name of the fluid.
      */
     String getFluidName();
     void setFluidName(String fluid_name);
 
 private:
+    void pumpOn();
+    void pumpOff();
+
     String m_fluid_name = "Default Fluid Name";
     int m_drive_pin;
     float m_calibration_K; // in mL per second
-    
+    bool m_negated_logic;
+
     bool m_isEnabled = false;
     bool m_isDispensing = false;
     unsigned long m_dispenseStartTime = 0;

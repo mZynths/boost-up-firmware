@@ -45,7 +45,6 @@ static std::map<String, CmdHandler> commandMap;
 #define STEPPER_B_DIR      6  // DIR pin     6
 
 #define TUMERIC_A 35
-#define TUMERIC_B 36
 
 #define DHTPIN 17
 
@@ -108,12 +107,12 @@ StepperPowderDispenser nido(
 
 // Pump objects
 static std::map<String, Pump*> fluidToPumpMap;
-Pump chocolate("Saborizante de Chocolate", PERISTALTIC_A, 1.8f);
-Pump caramelo("Saborizante de Vainilla", PERISTALTIC_B, 1.53f);
-Pump vainilla("Saborizante de Fresa", PERISTALTIC_C, 1.56f);
-Pump agua("Agua", WATER_PUMP, 32.83f);
+Pump chocolate("Saborizante de Chocolate", PERISTALTIC_A, 1.8f, false);
+Pump vainilla("Saborizante de Vainilla", PERISTALTIC_B, 1.53f, false);
+Pump fresa("Saborizante de Fresa", PERISTALTIC_C, 1.56f, false);
+Pump agua("Agua", WATER_PUMP, 32.83f, true); // Negated logic, LOW = on, HIGH = off
 
-Pump tumeric("Tumeric", TUMERIC_A, 0.1f);
+Pump tumeric("Tumeric", TUMERIC_A, 0.1f, false);
 
 // Debuging commands
 void onCommandBlink(int times) {
@@ -269,10 +268,10 @@ static StepperPowderDispenser* orderDispenser = nullptr;
 static float orderGrams = 0.0f;
 static Pump* orderPump = nullptr;
 static float orderMilliliters = 0.0f;
-static float orderTumericGrams = 0.0f;
+static float orderTumericMl = 0.0f;
 
 // Receives the dispenser, the amount in grams, the pump, the amount in mL, and ammount of tumeric in grams
-void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump* pump, float milliliters, float tumericGrams) {
+void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump* pump, float milliliters, float tumericMl) {
     if (grams <= 0.0f || milliliters <= 0.0f) {
         Serial.println("Error: grams and ml amounts must be > 0");
         return;
@@ -281,7 +280,7 @@ void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump*
     Serial.printf("Preparing drink with %.2f grams of %s, %.2f mL of %s, and %.2f grams of Tumeric\n",
         grams, dispenser->getPowderName().c_str(),
         milliliters, pump->getFluidName().c_str(),
-        tumericGrams
+        tumericMl
     );
 
     // Start the preparation process
@@ -291,16 +290,17 @@ void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump*
     orderGrams = grams;
     orderPump = pump;
     orderMilliliters = milliliters;
-    orderTumericGrams = tumericGrams;
+    orderTumericMl = tumericMl;
     Serial.println("Drink preparation started");
 }
 
 // Initialize commands and their handlers
 void initCommands() {
     fluidToPumpMap["1"] = &chocolate;
-    fluidToPumpMap["2"]  = &caramelo;
-    fluidToPumpMap["3"]  = &vainilla;
-    fluidToPumpMap["a"]      = &agua;
+    fluidToPumpMap["2"] = &vainilla;
+    fluidToPumpMap["3"] = &fresa;
+    fluidToPumpMap["a"] = &agua;
+    fluidToPumpMap["c"] = &tumeric;
 
     proteinToDispenserMap["1"] = &proteina;
     proteinToDispenserMap["2"] = &nido;
@@ -549,7 +549,7 @@ void updateStateMachine(){
             state = TUMERIC_DISPENSING;
             // Start dispensing tumeric
             tumeric.enable();
-            tumeric.dispense(orderTumericGrams);
+            tumeric.dispense(orderTumericMl);
         }
     } else if (state == TUMERIC_DISPENSING) {
         if (!tumeric.isDispensing()) {
@@ -570,7 +570,7 @@ void updateStateMachine(){
         orderGrams = 0.0f;
         orderPump = nullptr;
         orderMilliliters = 0.0f;
-        orderTumericGrams = 0.0f;
+        orderTumericMl = 0.0f;
 
         state = NOT_PREPARING;
 
@@ -578,8 +578,8 @@ void updateStateMachine(){
         proteina.disable();
         nido.disable();
         chocolate.disable();
-        caramelo.disable();
         vainilla.disable();
+        fresa.disable();
         agua.disable();
         tumeric.disable();
     }
@@ -707,8 +707,6 @@ void initPins() {
     // Tumeric
     pinMode(TUMERIC_A, OUTPUT);
     digitalWrite(TUMERIC_A, LOW);   // Set the stepper to LOW initially
-    pinMode(TUMERIC_B, OUTPUT);
-    digitalWrite(TUMERIC_B, LOW);   // Set the stepper to LOW initially
 
     Serial.println("Pins initialized");
 }
@@ -735,8 +733,8 @@ void loop() {
 
     updateStateMachine();
     chocolate.update();
-    caramelo.update();
     vainilla.update();
+    fresa.update();
     agua.update();
 
     proteina.update();
