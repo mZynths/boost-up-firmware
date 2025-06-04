@@ -35,6 +35,7 @@ static std::map<String, CmdHandler> commandMap;
 #define PERISTALTIC_B   9 
 #define PERISTALTIC_C  10
 #define WATER_PUMP      2
+#define TUMERIC 35
 
 #define STEPPER_A_STEP   14   // STEP pin   14
 #define STEPPER_A_SLEEP  13   // SLEEP pin  13
@@ -44,13 +45,9 @@ static std::map<String, CmdHandler> commandMap;
 #define STEPPER_B_SLEEP    7  // SLEEP pin  11
 #define STEPPER_B_DIR      6  // DIR pin     6
 
-#define TUMERIC_A 35
-
 #define DHTPIN 17
 
-#define DHTTYPE DHT11
-
-// State machine
+// ——— State machine ——— 
 #define NOT_PREPARING -1
 #define START_ORDER 0
 #define WATER_PUMPING 1
@@ -61,9 +58,10 @@ static std::map<String, CmdHandler> commandMap;
 
 int state = NOT_PREPARING;
 
+// ——— Global variables & constants ———
+#define DHTTYPE DHT11
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
-// ——— Global variables & constants ———
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 #define SERVICE_PORT 80
@@ -76,6 +74,7 @@ AsyncWebSocket ws("/ws");
 
 // Stepper objects
 static std::map<String, StepperPowderDispenser*> proteinToDispenserMap;
+
 StepperPowderDispenser proteina(
     "Pure Health",
     STEPPER_B_STEP,
@@ -112,7 +111,7 @@ Pump vainilla("Saborizante de Vainilla", PERISTALTIC_B, 1.53f, false);
 Pump fresa("Saborizante de Fresa", PERISTALTIC_C, 1.56f, false);
 Pump agua("Agua", WATER_PUMP, 32.83f, true); // Negated logic, LOW = on, HIGH = off
 
-Pump tumeric("Tumeric", TUMERIC_A, 0.1f, false);
+Pump tumeric("Tumeric", TUMERIC, 0.1f, false);
 
 // Debuging commands
 void onCommandBlink(int times) {
@@ -705,8 +704,8 @@ void initPins() {
     // digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
 
     // Tumeric
-    pinMode(TUMERIC_A, OUTPUT);
-    digitalWrite(TUMERIC_A, LOW);   // Set the stepper to LOW initially
+    pinMode(TUMERIC, OUTPUT);
+    digitalWrite(TUMERIC, LOW);   // Set the stepper to LOW initially
 
     Serial.println("Pins initialized");
 }
