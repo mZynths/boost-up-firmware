@@ -26,31 +26,23 @@ public:
     StepperPowderDispenser(
         String powder_name,
         int step_pin,
-        int dir_pin,
         int sleep_pin,
-        bool dispense_is_CW,
         float steps_per_gram,
         int step_interval,
         int pulse_duration,
-        int steps_per_revolution,
-        int vibration_step_interval,
-        int vibration_pulse_duration,
-        int steps_per_vibration
+        int steps_per_revolution
     );
 
     StepperPowderDispenser(
         int step_pin,
-        int dir_pin,
         int sleep_pin,
-        bool dispense_is_CW,
-        float steps_per_gram
+        float steps_per_gram,
+        int steps_per_revolution
     );
 
     StepperPowderDispenser(
         int step_pin,
-        int dir_pin,
-        int sleep_pin,
-        bool dispense_is_CW
+        int sleep_pin
     );
    
     /// @brief Allow motor to receive commands
@@ -78,11 +70,6 @@ public:
      */
     void spin(int steps);
     
-    /**
-     * @brief Vibrates the motor for a fixed amount of time
-     */
-    void vibrate();
-
     /// @brief Non-blocking update to handle motor movement
     void update();
 
@@ -109,7 +96,6 @@ public:
 private:
     // Hardware variables
     int s_step_pin;
-    int s_dir_pin;
     int s_sleep_pin;
 
     // Stepper motor timing
@@ -117,18 +103,12 @@ private:
     int s_pulse_duration;               // duration of pulse in microseconds
     int s_steps_per_revolution;         // steps per revolution of the motor
 
-    // Vibration timing
-    int s_vibration_step_interval;      // microseconds between steps in vibration motion
-    int s_vibration_pulse_duration;     // duration of pulse in microseconds in vibration motion
-    
     // Dispenser variables
     String s_powder_name;
     bool s_dispense_is_CW;               // steps per gram of powder dispensed
     float s_steps_per_gram;               // steps per gram of powder dispensed
-    int s_steps_per_vibration;          // how many steps to take before vibrating
     
     // State variables
-    int s_steps_till_vibration;         // steps until next vibration
     int s_steps_remaining;              // steps remaining in dispense motion
     unsigned long s_pulseStartTime;
     unsigned long s_stepStartTime;
