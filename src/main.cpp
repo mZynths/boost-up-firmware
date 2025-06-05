@@ -9,6 +9,7 @@
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
+#include <FastLED.h>
 
 // helper: split a String by ‘,’ and trim whitespace
 static std::vector<String> splitArgs(const String& s) {
@@ -47,6 +48,8 @@ static std::map<String, CmdHandler> commandMap;
 
 #define DHTPIN 17
 
+#define RGB_DATA 48
+
 // ——— State machine ——— 
 #define NOT_PREPARING -1
 #define START_ORDER 0
@@ -59,6 +62,12 @@ static std::map<String, CmdHandler> commandMap;
 int state = NOT_PREPARING;
 
 // ——— Global variables & constants ———
+#define NUM_LEDS 84
+#define LED_TYPE    WS2812
+#define COLOR_ORDER BGR
+
+CRGB leds[NUM_LEDS];
+
 #define DHTTYPE DHT11
 DHT_Unified dht(DHTPIN, DHTTYPE);
 
@@ -226,10 +235,9 @@ void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, f
 }
 
 void onCommandReadHumidity() {
-
     float averageHumidity = 0.0f;
 
-    // make 10 readings to get an average
+    // Make 10 readings to get an average
     for (int i = 0; i < 10; i++) {
         sensors_event_t event;
         dht.humidity().getEvent(&event);
@@ -293,6 +301,31 @@ void onCommandPrepareDrink(StepperPowderDispenser* dispenser, float grams, Pump*
     Serial.println("Drink preparation started");
 }
 
+void onCommandSetRGB(const String& args) {
+    auto parts = splitArgs(args);
+    if (parts.size() < 3) {
+        Serial.println("Usage: setRGB(red,green,blue)");
+        return;
+    }
+
+    int red = parts[0].toInt();
+    int green = parts[1].toInt();
+    int blue = parts[2].toInt();
+
+    // Clamp values to 0-255
+    red = constrain(red, 0, 255);
+    green = constrain(green, 0, 255);
+    blue = constrain(blue, 0, 255);
+
+    fill_solid(leds, NUM_LEDS, CRGB(red, green, blue));
+    FastLED.setBrightness(255); // Set brightness to maximum
+    
+    leds[0] = CRGB::Black;
+
+    FastLED.show();
+    Serial.printf("Set RGB to (%d,%d,%d)\n", red, green, blue);
+}
+
 // Initialize commands and their handlers
 void initCommands() {
     fluidToPumpMap["1"] = &chocolate;
@@ -314,6 +347,10 @@ void initCommands() {
 
         int times = parts[0].toInt();
         onCommandBlink(times);
+    };
+
+    commandMap["rgb"] = [](const String& args){
+        onCommandSetRGB(args);
     };
 
     // Pump commands
@@ -677,35 +714,20 @@ void initMDNS() {
     Serial.printf("Registered service “_ws._tcp” on port %u\n", SERVICE_PORT);
 }
 
+// Initialize RGB Strip
+void initRGBStrip() {
+    FastLED.addLeds<LED_TYPE, RGB_DATA, COLOR_ORDER>(leds, NUM_LEDS);
+    FastLED.setBrightness(255); // Set brightness to 50%
+    fill_solid(leds, NUM_LEDS, CRGB::Black);
+    FastLED.show();
+
+    Serial.println("RGB Strip initialized");
+}
+
 // Initialize pins
 void initPins() {
     // Built-in LED
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW); // Set the LED to LOW initially
-
-    // Stepper A
-    // pinMode(STEPPER_A_DIR, OUTPUT);
-    // digitalWrite(STEPPER_A_DIR, LOW);   // Set the stepper to LOW initially
-
-    // pinMode(STEPPER_A_STEP, OUTPUT);
-    // digitalWrite(STEPPER_A_STEP, LOW);   // Set the stepper to LOW initially
-    
-    // pinMode(STEPPER_A_SLEEP, OUTPUT);
-    // digitalWrite(STEPPER_A_SLEEP, LOW);  // Set the stepper to LOW initially
-    
-    // Stepper B
-    // pinMode(STEPPER_B_DIR, OUTPUT);
-    // digitalWrite(STEPPER_B_DIR, LOW);   // Set the stepper to LOW initially
-
-    // pinMode(STEPPER_B_STEP, OUTPUT);
-    // digitalWrite(STEPPER_B_STEP, LOW);   // Set the stepper to LOW initially
-    
-    // pinMode(STEPPER_B_SLEEP, OUTPUT);
-    // digitalWrite(STEPPER_B_SLEEP, LOW);  // Set the stepper to LOW initially
-
-    // Tumeric
-    pinMode(TUMERIC, OUTPUT);
-    digitalWrite(TUMERIC, LOW);   // Set the stepper to LOW initially
+    pinMode(RGB_DATA, OUTPUT);
 
     Serial.println("Pins initialized");
 }
@@ -714,20 +736,34 @@ void setup() {
     Serial.begin(115200);
 
     initPins();
+
+    initRGBStrip();
+    fill_solid(leds, NUM_LEDS, CRGB::Red);
+
+    FastLED.show();
+
     initWiFi();
+    fill_solid(leds, NUM_LEDS, CRGB::Orange);
+    FastLED.show();
+
     initWebSocket();
+    fill_solid(leds, NUM_LEDS, CRGB::Yellow);
+    FastLED.show();
+
     initMDNS();
     initCommands();
+    fill_solid(leds, NUM_LEDS, CRGB::Green);
+    FastLED.show();
 
     // Start server
-    server.begin(); // Not entirely sure if the WS Server needs this to run
+    server.begin();
+    
+    fill_solid(leds, NUM_LEDS, CRGB::Purple);
+    leds[0] = CRGB::Black;
+    FastLED.show();
 }
 
 void loop() {
-    // Do something:
-    // delay(500);
-
-    // At the end:
     ws.cleanupClients();
 
     updateStateMachine();
