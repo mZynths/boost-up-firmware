@@ -87,17 +87,17 @@ AsyncWebSocket ws("/ws");
 // Stepper objects
 static std::map<String, StepperPowderDispenser*> proteinToDispenserMap;
 
-StepperPowderDispenser pureHealth(
-    "Pure Health",
+StepperPowderDispenser birdman(
+    "Birdman",
     STEPPER_B_STEP,
     STEPPER_B_SLEEP,
-    87.13371302,   // steps per gram
+    346.18,   // steps per gram
     3000,  // step interval in microseconds
     3000,  // pulse duration in microseconds
     200   // steps per revolution
 );
-StepperPowderDispenser birdman(
-    "Birdman",
+StepperPowderDispenser pureHealth(
+    "Pure Health",
     STEPPER_A_STEP,
     STEPPER_A_SLEEP,
     87.13371302,   // steps per gram
@@ -113,25 +113,6 @@ Pump vainilla("Saborizante de Vainilla", PERISTALTIC_B, 1.53f, false);
 Pump fresa("Saborizante de Fresa", PERISTALTIC_C, 1.56f, false);
 Pump agua("Agua", WATER_PUMP, 32.83f, true); // Negated logic, LOW = on, HIGH = off
 Pump tumeric("Tumeric", TUMERIC, 0.1f, false);
-
-// Debuging commands
-void onCommandBlink(int times) {
-    if (times <= 0) {
-        Serial.println("Error: times must be > 0");
-        return;
-    }
-
-    Serial.printf("Blinking LED %d times\n", times);
-    
-    for (int i = 0; i < times; i++) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(100);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(100);
-    }
-
-    Serial.println("Done blinking");
-}
 
 // Pump commands
 void onCommandPumpFluid(Pump* pump, float milliliters) {
@@ -205,27 +186,6 @@ void onCommandDispensePowder(StepperPowderDispenser* dispenser, float grams) {
     dispenser->dispense(grams);
 }
 
-void onCommandCalibrateDispenser(StepperPowderDispenser* dispenser, int steps, float grams) {
-    if (steps <= 0) {
-        Serial.println("Error: steps must be > 0");
-        return;
-    }
-
-    if (grams <= 0.0f) {
-        Serial.println("Error: grams must be > 0");
-        return;
-    }
-
-    dispenser->calibrate(steps, grams);
-    
-    Serial.printf(
-        "Calibrated %s: %d steps for %.2f grams\n",
-        dispenser->getPowderName().c_str(),
-        steps,
-        grams
-    );
-}
-
 void onCommandReadHumidity() {
     float averageHumidity = 0.0f;
 
@@ -248,18 +208,6 @@ void onCommandReadHumidity() {
     // Send average humidity data over WebSocket
     String humidityData = String(averageHumidity);
     ws.textAll(humidityData);
-}
-
-void onCommandDispenseTumeric(float grams) {
-    if (grams <= 0.0f) {
-        Serial.println("Error: grams must be > 0");
-        return;
-    }
-
-    Serial.printf("Dispensing %.2f grams of Tumeric\n", grams);
-    
-    tumeric.enable();
-    tumeric.dispense(grams);
 }
 
 // Order to prepare variables
@@ -360,33 +308,84 @@ void onCommandSymetric(const String& args) {
     strip.addAnimation(cmdSymAnim);
 }
 
-RadiatingSymmetricPulseAnim tabletRadIn(
-    49,
-    56,
-    true,
-    0,
-    TABLET_INTERACT_YELLOW,
-    300,
-    60 // FPS
-);
+RadiatingSymmetricPulseAnim* tabletRadInPointer = nullptr;
+RadiatingSymmetricPulseAnim* bottleRadInPointer = nullptr;
 
-void onCommandOrderResume() {
-    strip.addAnimation(&tabletRadIn);
+void onCommandOrderDetails() {
+    if (tabletRadInPointer != nullptr) {
+        tabletRadInPointer->finish();
+    }
+
+    tabletRadInPointer = new RadiatingSymmetricPulseAnim(
+        49,
+        56,
+        true,
+        0,
+        TABLET_INTERACT_YELLOW,
+        300,
+        60 // FPS
+    );
+
+    strip.addAnimation(tabletRadInPointer);
+
     Serial.println("Waiting for user to check their order");
 }
 
-RadiatingSymmetricPulseAnim bottleRadIn(
-    33,
-    43,
-    true,
-    0,
-    INSERT_BOTTLE_YELLOW,
-    300,
-    60 // FPS
-);
+void onCommandOrderCanceled() {
+    // Stop the tablet animation
+    if (tabletRadInPointer != nullptr) {
+        tabletRadInPointer->finish();
+        tabletRadInPointer = nullptr;
+    }
+
+    SymmetricFillAnim *fixTablet = new SymmetricFillAnim(
+        49 - 5, // Start index
+        56 + 5, // End index
+        DIM_BOOSTUP_PURPLE, // Color
+        500, // Duration in milliseconds
+        60 // FPS
+    );
+
+    SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
+        33 - 5, // Start index
+        43 + 5, // End index
+        DIM_BOOSTUP_PURPLE, // Color
+        500, // Duration in milliseconds
+        60 // FPS
+    );
+
+    if (bottleRadInPointer != nullptr) {
+        bottleRadInPointer->finish();
+        bottleRadInPointer = nullptr;
+    }
+    
+    strip.addAnimation(fixTablet);
+    strip.addAnimation(fixBottle);
+
+    Serial.println("Order cancelled, returning to idle state");
+}
 
 void onCommandOrderAskForBottle() {
-    tabletRadIn.finish();
+    // Stop the tablet animation
+    if (tabletRadInPointer != nullptr) {
+        tabletRadInPointer->finish();
+        tabletRadInPointer = nullptr;
+    }
+
+    if (bottleRadInPointer != nullptr) {
+        bottleRadInPointer->finish();
+    }
+
+    bottleRadInPointer = new RadiatingSymmetricPulseAnim(
+        33,
+        43,
+        true,
+        0,
+        INSERT_BOTTLE_YELLOW,
+        300,
+        60 // FPS
+    );
+
 
     SymmetricFillAnim *fixTablet = new SymmetricFillAnim(
         49 - 5, // Start index
@@ -398,12 +397,15 @@ void onCommandOrderAskForBottle() {
 
     strip.addAnimation(fixTablet);
 
-    strip.addAnimation(&bottleRadIn);
+    strip.addAnimation(bottleRadInPointer);
     Serial.println("Asking user to insert bottle");
 }
 
 void onCommandProgressBar() {
-    bottleRadIn.finish();
+    if (bottleRadInPointer != nullptr) {
+        bottleRadInPointer->finish();
+        bottleRadInPointer = nullptr;
+    }
 
     SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
         33 - 5, // Start index
@@ -470,20 +472,8 @@ void initCommands() {
     fluidToPumpMap["a"] = &agua;
     fluidToPumpMap["c"] = &tumeric;
 
-    proteinToDispenserMap["1"] = &pureHealth;
-    proteinToDispenserMap["2"] = &birdman;
-
-    // Debuging commands
-    commandMap["blink"] = [](const String& args){
-        auto parts = splitArgs(args);
-        if (parts.size() < 1) {
-            Serial.println("Usage: blink(times)");
-            return;
-        }
-
-        int times = parts[0].toInt();
-        onCommandBlink(times);
-    };
+    proteinToDispenserMap["1"] = &birdman;
+    proteinToDispenserMap["2"] = &pureHealth;
 
     commandMap["rgb"] = [](const String& args){
         onCommandSetRGB(args);
@@ -493,8 +483,13 @@ void initCommands() {
         onCommandSymetric(args);
     };
 
+    // Animation commands
     commandMap["orderDetails"] = [](const String& args){
-        onCommandOrderResume();
+        onCommandOrderDetails();
+    };
+
+    commandMap["orderCanceled"] = [](const String& args){
+        onCommandOrderCanceled();
     };
 
     commandMap["orderAskForBottle"] = [](const String& args){
@@ -767,8 +762,8 @@ void updateStateMachine(){
         state = NOT_PREPARING;
 
         // Disable all dispensers and pumps
-        pureHealth.disable();
         birdman.disable();
+        pureHealth.disable();
         chocolate.disable();
         vainilla.disable();
         fresa.disable();
@@ -944,6 +939,6 @@ void loop() {
     agua.update();
     tumeric.update();
 
-    pureHealth.update();
     birdman.update();
+    pureHealth.update();
 }
