@@ -1,10 +1,14 @@
 #include <Arduino.h>
+#include "secrets.h"
+#include "customColors.h"
+#include "AnimatedStrip.h"
+#include "StepperPowderDispenser.h"
+#include "SymmetricFillAnim.h"
+#include "BlinkingSymetricFillAnim.h"
+#include "Pump.h"
 #include <ESPAsyncWebServer.h>
 #include <map>
 #include <functional>
-#include <secrets.h>
-#include <Pump.h>
-#include <StepperPowderDispenser.h>
 #include <ESPmDNS.h>
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
@@ -65,6 +69,7 @@ int state = NOT_PREPARING;
 #define COLOR_ORDER BGR
 
 CRGB leds[NUM_LEDS];
+AnimatedStrip strip(leds, NUM_LEDS);
 
 #define DHTTYPE DHT11
 DHT_Unified dht(DHTPIN, DHTTYPE);
@@ -82,7 +87,7 @@ AsyncWebSocket ws("/ws");
 // Stepper objects
 static std::map<String, StepperPowderDispenser*> proteinToDispenserMap;
 
-StepperPowderDispenser proteina(
+StepperPowderDispenser pureHealth(
     "Pure Health",
     STEPPER_B_STEP,
     STEPPER_B_SLEEP,
@@ -91,7 +96,7 @@ StepperPowderDispenser proteina(
     3000,  // pulse duration in microseconds
     200   // steps per revolution
 );
-StepperPowderDispenser nido(
+StepperPowderDispenser birdman(
     "Birdman",
     STEPPER_A_STEP,
     STEPPER_A_SLEEP,
@@ -107,7 +112,6 @@ Pump chocolate("Saborizante de Chocolate", PERISTALTIC_A, 1.8f, false);
 Pump vainilla("Saborizante de Vainilla", PERISTALTIC_B, 1.53f, false);
 Pump fresa("Saborizante de Fresa", PERISTALTIC_C, 1.56f, false);
 Pump agua("Agua", WATER_PUMP, 32.83f, true); // Negated logic, LOW = on, HIGH = off
-
 Pump tumeric("Tumeric", TUMERIC, 0.1f, false);
 
 // Debuging commands
@@ -314,6 +318,150 @@ void onCommandSetRGB(const String& args) {
     Serial.printf("Set RGB to (%d,%d,%d)\n", red, green, blue);
 }
 
+void onCommandSymetric(const String& args) {
+    auto parts = splitArgs(args);
+    if (parts.size() < 6) {
+        Serial.println("Usage: symetric(startIndex,endIndex,r,g,b,animationDurationMs)");
+        return;
+    }
+
+    int startIndex = parts[0].toInt();
+    int endIndex = parts[1].toInt();
+    CRGB color = CRGB(
+        parts[2].toInt(), // Red
+        parts[3].toInt(), // Green
+        parts[4].toInt()  // Blue
+    );
+    float durationMs = parts[5].toFloat();
+
+    if (startIndex < 0 || endIndex >= NUM_LEDS || startIndex > endIndex) {
+        Serial.println("Error: Invalid indices for symetric animation");
+        return;
+    }
+
+    // SymmetricFillAnim* cmdSymAnim = new SymmetricFillAnim(
+    //     startIndex,
+    //     endIndex,
+    //     color,
+    //     durationMs,
+    //     60 // FPS
+    // );
+
+    RadiatingSymmetricPulseAnim* cmdSymAnim = new RadiatingSymmetricPulseAnim(
+        startIndex,
+        endIndex,
+        true,
+        3,
+        color,
+        durationMs,
+        60 // FPS
+    );
+
+    strip.addAnimation(cmdSymAnim);
+}
+
+RadiatingSymmetricPulseAnim tabletRadIn(
+    49,
+    56,
+    true,
+    0,
+    TABLET_INTERACT_YELLOW,
+    300,
+    60 // FPS
+);
+
+void onCommandOrderResume() {
+    strip.addAnimation(&tabletRadIn);
+    Serial.println("Waiting for user to check their order");
+}
+
+RadiatingSymmetricPulseAnim bottleRadIn(
+    33,
+    43,
+    true,
+    0,
+    INSERT_BOTTLE_YELLOW,
+    300,
+    60 // FPS
+);
+
+void onCommandOrderAskForBottle() {
+    tabletRadIn.finish();
+
+    SymmetricFillAnim *fixTablet = new SymmetricFillAnim(
+        49 - 5, // Start index
+        56 + 5, // End index
+        DIM_BOOSTUP_PURPLE, // Color
+        500, // Duration in milliseconds
+        60 // FPS
+    );
+
+    strip.addAnimation(fixTablet);
+
+    strip.addAnimation(&bottleRadIn);
+    Serial.println("Asking user to insert bottle");
+}
+
+void onCommandProgressBar() {
+    bottleRadIn.finish();
+
+    SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
+        33 - 5, // Start index
+        43 + 5, // End index
+        DIM_BOOSTUP_PURPLE, // Color
+        500, // Duration in milliseconds
+        60 // FPS
+    );
+    strip.addAnimation(fixBottle);
+
+    // Animate the order preparation
+    float orderDuration = 20000.0f;
+
+    SymmetricFillAnim *orderAnim = new SymmetricFillAnim(
+        33, // Start index
+        43, // End index
+        PROGRESS_WHITE, // Color
+        orderDuration, // Duration in milliseconds
+        60 // FPS
+    );
+
+    strip.addAnimation(orderAnim);
+
+    Serial.println("Order preparation animation started");
+}
+
+void onCommandOrderFinish() {
+    // Finish the order preparation animation
+
+    RadiatingSymmetricPulseAnim *takeBottle = new RadiatingSymmetricPulseAnim(
+        33,
+        43,
+        false,
+        5,
+        REMOVE_BOTTLE_GREEN,
+        300,
+        60 // FPS
+    );
+
+
+    SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
+        33 - 5, // Start index
+        43 + 5, // End index
+        DIM_BOOSTUP_PURPLE, // Color
+        500, // Duration in milliseconds
+        60 // FPS
+    );
+
+    fixBottle->start_delay_ms = 6000; // Wait 3 seconds before starting the fix animation
+
+    strip.addAnimation(takeBottle);
+    
+    strip.addAnimation(fixBottle);
+    
+    Serial.println("Order preparation finished");
+}
+
+
 // Initialize commands and their handlers
 void initCommands() {
     fluidToPumpMap["1"] = &chocolate;
@@ -322,8 +470,8 @@ void initCommands() {
     fluidToPumpMap["a"] = &agua;
     fluidToPumpMap["c"] = &tumeric;
 
-    proteinToDispenserMap["1"] = &proteina;
-    proteinToDispenserMap["2"] = &nido;
+    proteinToDispenserMap["1"] = &pureHealth;
+    proteinToDispenserMap["2"] = &birdman;
 
     // Debuging commands
     commandMap["blink"] = [](const String& args){
@@ -339,6 +487,26 @@ void initCommands() {
 
     commandMap["rgb"] = [](const String& args){
         onCommandSetRGB(args);
+    };
+
+    commandMap["symetric"] = [](const String& args){
+        onCommandSymetric(args);
+    };
+
+    commandMap["orderDetails"] = [](const String& args){
+        onCommandOrderResume();
+    };
+
+    commandMap["orderAskForBottle"] = [](const String& args){
+        onCommandOrderAskForBottle();
+    };
+
+    commandMap["orderProgressBar"] = [](const String& args){
+        onCommandProgressBar();
+    };
+
+    commandMap["orderFinish"] = [](const String& args){
+        onCommandOrderFinish();
     };
 
     // Pump commands
@@ -599,8 +767,8 @@ void updateStateMachine(){
         state = NOT_PREPARING;
 
         // Disable all dispensers and pumps
-        proteina.disable();
-        nido.disable();
+        pureHealth.disable();
+        birdman.disable();
         chocolate.disable();
         vainilla.disable();
         fresa.disable();
@@ -705,9 +873,11 @@ void initMDNS() {
 // Initialize RGB Strip
 void initRGBStrip() {
     FastLED.addLeds<LED_TYPE, RGB_DATA, COLOR_ORDER>(leds, NUM_LEDS);
-    FastLED.setBrightness(255); // Set brightness to 50%
+    FastLED.setBrightness(255);
     fill_solid(leds, NUM_LEDS, CRGB::Black);
     FastLED.show();
+
+
 
     Serial.println("RGB Strip initialized");
 }
@@ -746,21 +916,34 @@ void setup() {
     // Start server
     server.begin();
     
-    fill_solid(leds, NUM_LEDS, CRGB::Purple);
+    fill_solid(leds, NUM_LEDS, BOOSTUP_PURPLE);
     leds[0] = CRGB::Black;
     FastLED.show();
+
+    SymmetricFillAnim* frontAnim = new SymmetricFillAnim(
+        26,
+        59,
+        DIM_BOOSTUP_PURPLE,
+        1000.0f,
+        60 // FPS
+    );
+
+    strip.addAnimation(frontAnim);
 }
 
 void loop() {
     ws.cleanupClients();
 
     updateStateMachine();
+
+    strip.update();
+
     chocolate.update();
     vainilla.update();
     fresa.update();
     agua.update();
-
-    proteina.update();
-    nido.update();
     tumeric.update();
+
+    pureHealth.update();
+    birdman.update();
 }
