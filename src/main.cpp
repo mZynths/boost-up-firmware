@@ -36,17 +36,19 @@ using CmdHandler = std::function<void(const String& args)>;
 static std::map<String, CmdHandler> commandMap;
 
 // ——— Pin definitions ———
-#define PERISTALTIC_A    46
-#define PERISTALTIC_B     9 
-#define PERISTALTIC_C    10
-#define WATER_PUMP        2
-#define TUMERIC          35
+#define PERISTALTIC_A  46
+#define PERISTALTIC_B   9 
+#define PERISTALTIC_C  10
+#define WATER_PUMP      2
+#define TUMERIC 35
 
 #define STEPPER_A_STEP   14   // STEP pin   14
 #define STEPPER_A_SLEEP  13   // SLEEP pin  13
+#define STEPPER_A_DIR     5   // DIR pin     5 
 
 #define STEPPER_B_STEP    15  // STEP pin   12
 #define STEPPER_B_SLEEP    7  // SLEEP pin  11
+#define STEPPER_B_DIR      6  // DIR pin     6
 
 #define DHTPIN 17
 
@@ -91,19 +93,29 @@ StepperPowderDispenser birdman(
     "Birdman",
     STEPPER_B_STEP,
     STEPPER_B_SLEEP,
-    87, //346.18,   // steps per gram
+    STEPPER_B_DIR,
+    false, // dispense clockwise
+    32.5415, //346.18,   // steps per gram
     3000,  // step interval in microseconds
     3000,  // pulse duration in microseconds
-    200   // steps per revolution
+    200,   // steps per revolution
+    1000,  // vibration step interval in microseconds
+    100,   // vibration pulse duration in microseconds
+    84    // steps per vibration
 );
 StepperPowderDispenser pureHealth(
     "Pure Health",
     STEPPER_A_STEP,
     STEPPER_A_SLEEP,
-    87.13371302,   // steps per gram
+    STEPPER_A_DIR,
+    false, // dispense clockwise
+    71.8602,   // steps per gram
     3000,  // step interval in microseconds
     3000,  // pulse duration in microseconds
-    200   // steps per revolution
+    200,   // steps per revolution
+    1000,  // vibration step interval in microseconds
+    100,   // vibration pulse duration in microseconds
+    84    // steps per vibration
 );
 
 // Pump objects
@@ -921,7 +933,7 @@ void setup() {
     initCommands();
     fill_solid(leds, NUM_LEDS, CRGB::Green);
     FastLED.show();
-    
+
     // Start server
     server.begin();
     
