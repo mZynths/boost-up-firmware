@@ -91,7 +91,7 @@ StepperPowderDispenser birdman(
     "Birdman",
     STEPPER_B_STEP,
     STEPPER_B_SLEEP,
-    346.18,   // steps per gram
+    87, //346.18,   // steps per gram
     3000,  // step interval in microseconds
     3000,  // pulse duration in microseconds
     200   // steps per revolution
@@ -310,6 +310,7 @@ void onCommandSymetric(const String& args) {
 
 RadiatingSymmetricPulseAnim* tabletRadInPointer = nullptr;
 RadiatingSymmetricPulseAnim* bottleRadInPointer = nullptr;
+RadiatingSymmetricPulseAnim* animationWhilePreparing = nullptr;
 
 void onCommandOrderDetails() {
     if (tabletRadInPointer != nullptr) {
@@ -407,6 +408,22 @@ void onCommandProgressBar() {
         bottleRadInPointer = nullptr;
     }
 
+    if (animationWhilePreparing != nullptr) {
+        animationWhilePreparing->finish();
+        animationWhilePreparing = nullptr;
+    }
+
+    animationWhilePreparing = new RadiatingSymmetricPulseAnim(
+        33,
+        43,
+        true,
+        0,
+        PROGRESS_BLUE,
+        1000,
+        60, // FPS,
+        60
+    );
+
     SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
         33 - 5, // Start index
         43 + 5, // End index
@@ -416,23 +433,17 @@ void onCommandProgressBar() {
     );
     strip.addAnimation(fixBottle);
 
-    // Animate the order preparation
-    float orderDuration = 20000.0f;
-
-    SymmetricFillAnim *orderAnim = new SymmetricFillAnim(
-        33, // Start index
-        43, // End index
-        PROGRESS_WHITE, // Color
-        orderDuration, // Duration in milliseconds
-        60 // FPS
-    );
-
-    strip.addAnimation(orderAnim);
+    strip.addAnimation(animationWhilePreparing);
 
     Serial.println("Order preparation animation started");
 }
 
 void onCommandOrderFinish() {
+    if (animationWhilePreparing != nullptr) {
+        animationWhilePreparing->finish();
+        animationWhilePreparing = nullptr;
+    }
+
     // Finish the order preparation animation
 
     RadiatingSymmetricPulseAnim *takeBottle = new RadiatingSymmetricPulseAnim(
@@ -444,7 +455,6 @@ void onCommandOrderFinish() {
         300,
         60 // FPS
     );
-
 
     SymmetricFillAnim *fixBottle = new SymmetricFillAnim(
         33 - 5, // Start index
@@ -462,7 +472,6 @@ void onCommandOrderFinish() {
     
     Serial.println("Order preparation finished");
 }
-
 
 // Initialize commands and their handlers
 void initCommands() {
@@ -711,6 +720,9 @@ void updateStateMachine(){
         return;
     } else if (state == START_ORDER) {
         // Start the order
+        
+        onCommandProgressBar();
+
         Serial.println("Starting order preparation");
         state = WATER_PUMPING;
         agua.enable();
@@ -718,7 +730,7 @@ void updateStateMachine(){
     } else if (state == WATER_PUMPING) {
         if (!agua.isDispensing()) {
             Serial.println("Water pumping done, dispensing protein");
-            delay(2000); // Wait for 1 second before dispensing protein
+            delay(500); // Half a second delay before dispensing protein
             state = PROTEIN_DISPENSING;
             orderDispenser->enable();
             orderDispenser->dispense(orderGrams);
@@ -749,6 +761,8 @@ void updateStateMachine(){
     } else if (state == FINISH_ORDER) {
         // Order finished, reset state
         Serial.println("Order finished");
+
+        onCommandOrderFinish();
         
         // Let the websocket clients know
         ws.textAll("Order finished");

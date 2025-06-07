@@ -1,11 +1,8 @@
 #define BOOSTUP_PURPLE 0x500aff
 #define DIM_BOOSTUP_PURPLE 0x0f0132
 
-
-
-// #define ERROR_RED 0xff0000
-
 #define PROGRESS_WHITE 0xffffff
+#define PROGRESS_BLUE 0x00a2ff
 
 #define INSERT_BOTTLE_YELLOW 0xff8700
 #define TABLET_INTERACT_YELLOW 0xff8700

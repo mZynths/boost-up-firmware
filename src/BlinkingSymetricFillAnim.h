@@ -11,9 +11,10 @@ struct RadiatingSymmetricPulseAnim : public AnimatedStrip::Animation {
     bool toInside = false;
     int max_loops = 0;      // 0 means infinite (perpetual)
     int loop_count = 0;
+    int frames_per_pulse = 30; // Number of frames for one full pulse cycle
 
-    RadiatingSymmetricPulseAnim(int s, int e, bool toInside, int maxLoops, const CRGB& c, float duration_ms, int fps)
-        : start_index(s), end_index(e), color(c), toInside(toInside), max_loops(maxLoops)
+    RadiatingSymmetricPulseAnim(int s, int e, bool toInside, int maxLoops, const CRGB& c, float duration_ms, int fps, int fpp = 30)
+        : start_index(s), end_index(e), color(c), toInside(toInside), max_loops(maxLoops), frames_per_pulse(fpp)
     {
         int range = abs(end_index - start_index);
         center_index = (start_index + end_index) / 2.0f;
@@ -30,7 +31,6 @@ struct RadiatingSymmetricPulseAnim : public AnimatedStrip::Animation {
     bool update(CRGB* leds) override {
         if (!shouldUpdate()) return true;
 
-        int frames_per_pulse = 30;
         float cycle_progress = (current_frame % frames_per_pulse) / (float)frames_per_pulse;
 
         bool to_color = ((current_frame / frames_per_pulse) % 2) == 0;
