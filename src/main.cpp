@@ -747,7 +747,7 @@ void updateStateMachine(){
             state = WATER_PUMPING;
             orderDispenser->disable();
             agua.enable();
-            agua.dispense(350.0f); // Dispense 350 mL of water
+            agua.dispense(275.0f); // Dispense 275 mL of water
         }
     } else if (state == WATER_PUMPING) {
         if (!agua.isDispensing()) {
