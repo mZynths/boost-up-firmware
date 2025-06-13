@@ -124,7 +124,7 @@ Pump chocolate("Saborizante de Chocolate", PERISTALTIC_A, 1.8f, false);
 Pump vainilla("Saborizante de Vainilla", PERISTALTIC_B, 1.53f, false);
 Pump fresa("Saborizante de Fresa", PERISTALTIC_C, 1.56f, false);
 Pump agua("Agua", WATER_PUMP, 32.83f, true); // Negated logic, LOW = on, HIGH = off
-Pump tumeric("Tumeric", TUMERIC, 0.1f, false);
+Pump tumeric("Tumeric", TUMERIC, 8.7575f, false); // Non calibrated
 
 // Pump commands
 void onCommandPumpFluid(Pump* pump, float milliliters) {
@@ -736,20 +736,23 @@ void updateStateMachine(){
         onCommandProgressBar();
 
         Serial.println("Starting order preparation");
-        state = WATER_PUMPING;
-        agua.enable();
-        agua.dispense(350.0f); // Dispense 350 mL of water
+        state = PROTEIN_DISPENSING;
+
+        orderDispenser->enable();
+        orderDispenser->dispense(orderGrams);
+        
+     } else if (state == PROTEIN_DISPENSING) {
+        if (!orderDispenser->isDispensing()) {
+            Serial.println("Protein dispensing done, pumping flavor");
+            state = WATER_PUMPING;
+            orderDispenser->disable();
+            agua.enable();
+            agua.dispense(350.0f); // Dispense 350 mL of water
+        }
     } else if (state == WATER_PUMPING) {
         if (!agua.isDispensing()) {
             Serial.println("Water pumping done, dispensing protein");
             delay(500); // Half a second delay before dispensing protein
-            state = PROTEIN_DISPENSING;
-            orderDispenser->enable();
-            orderDispenser->dispense(orderGrams);
-        }
-    } else if (state == PROTEIN_DISPENSING) {
-        if (!orderDispenser->isDispensing()) {
-            Serial.println("Protein dispensing done, pumping flavor");
             state = FLAVOR_PUMPING;
             orderPump->enable();
             orderPump->dispense(orderMilliliters);
