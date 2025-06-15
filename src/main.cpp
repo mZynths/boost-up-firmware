@@ -159,20 +159,6 @@ void onCommandFluidSpin(Pump* pump, float milliseconds) {
     pump->spin(milliseconds);
 }
 
-void onCommandFluidSetMlPerSecond(Pump* pump, float millilitersPerSecond) {
-    if (millilitersPerSecond <= 0.0f) {
-        Serial.println("Error: millilitersPerSecond must be > 0");
-        return;
-    }
-
-    pump->set_calibration(millilitersPerSecond);
-    Serial.printf(
-        "Set %s calibration to %.2f mL/s\n",
-        pump->getFluidName().c_str(),
-        millilitersPerSecond
-    );
-}
-
 // Powder dispenser commands
 void onCommandDispenserSpin(StepperPowderDispenser* dispenser, int steps) {
     if (steps <= 0) {
@@ -566,27 +552,6 @@ void initCommands() {
         }
 
         onCommandFluidSpin(it->second, milliseconds);
-    };
-
-    commandMap["fluidSetmlPerSecond"] = [](const String& args){
-        auto parts = splitArgs(args);
-
-        if (parts.size() < 2) {
-            Serial.println("Usage: fluidSetmlPerSecond(fluidAlias,millilitersPerSecond)");
-            return;
-        }
-
-        String fluid = parts[0];
-        float millilitersPerSecond = parts[1].toFloat();
-
-        auto it = fluidToPumpMap.find(fluid);
-        
-        if (it == fluidToPumpMap.end()) {
-            Serial.println("Error: unknown fluid " + fluid);
-            return;
-        }
-
-        onCommandFluidSetMlPerSecond(it->second, millilitersPerSecond);
     };
 
     // Powder dispenser commands
